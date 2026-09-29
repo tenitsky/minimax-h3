@@ -1,0 +1,4 @@
+{
+  "entrypoint": ["bash", "-lc"],
+  "cmd": ["set -e; for attempt in 1 2 3 4 5 6 7 8 9 10; do repo=$(mktemp -d /tmp/minimax-h3.XXXXXX); if git clone --depth 1 https://github.com/tenitsky/minimax-h3.git \"$repo\"; then exec bash \"$repo/setup.sh\"; fi; sleep 5; done; echo 'FATAL: unable to clone minimax-h3 after 10 attempts' >&2; exit 1"]
+}

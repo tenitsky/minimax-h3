@@ -38,7 +38,7 @@ On first pod boot, `setup.sh`:
 
 1. Copies the baked ComfyUI from `/opt/comfyui-baked` to `/workspace/runpod-slim/ComfyUI`
    (self-healing, skip-if-present)
-2. Checks that the image's ComfyUI has `MiniMaxH3AddGuide`, and warns loudly if not
+2. Checks that the image's ComfyUI has `MiniMaxH3AddGuide`, and stops if not
 3. Installs the bundled `comfyui-h3-longform` nodes (4 nodes, no dependencies besides
    ffmpeg)
 4. Downloads the H3 model files (skip-if-exists, resumable)
@@ -67,15 +67,18 @@ For Global Volumes, use the automatic storage layout below instead.
 
 ## Automatic Global Volume storage
 
-Attach a RunPod **Global Volume** when deploying. Setup detects its mount at
-`/workspace-global` automatically; no manual copy commands or extra regional
+Attach a RunPod **Global Volume** when deploying, and **explicitly set its mount
+path to `/workspace-global`**. RunPod currently defaults a lone Global Volume to
+`/workspace`; that default is wrong for this template because ComfyUI needs a
+regular working filesystem there. Setup detects the configured mount automatically;
+no manual copy commands or extra regional
 network volume are needed. Use one writing pod per `minimax-h3` storage namespace.
 
 | Data | Location and behavior |
 |---|---|
 | Models | `/workspace-global/minimax-h3/models/`; downloaded once, verified, then reused through local links |
 | Uploaded portraits and audio | `/workspace-global/minimax-h3/input/`; ComfyUI's input directory points here |
-| Saved sidebar workflows | `/workspace-global/minimax-h3/workflows/` |
+| Saved sidebar workflows | Edited locally; copied to `/workspace-global/minimax-h3/workflows/` after successful UI saves |
 | ComfyUI, Python, download cache, rendering and stitching | Pod working disk under `/workspace` |
 | Completed chunks, carry tails and final videos | Copied automatically to `/workspace-global/minimax-h3/output/` and checksum-verified |
 
@@ -85,7 +88,9 @@ If `/workspace` is on the container disk, set the **container disk to 100 GB**.
 If it is a separate pod-local volume disk, size that disk to 100 GB instead.
 The old 5 GB container setting is only suitable when `/workspace` has its own
 sufficiently large working volume. Setup requires at least **40 GiB free after
-copying ComfyUI**, for a staged model download and rendering scratch.
+copying ComfyUI**, for a staged model download and rendering scratch. Before model
+downloads, setup also tests Global Volume creation, reading, overwriting, checksums,
+and access through a local model symlink.
 
 Models download to local scratch one at a time, then copy to Global Storage and
 are verified before their local staging copy is removed. Uploads do not rely on
@@ -108,50 +113,88 @@ session settings when resuming; use a new session for a new render. To permanent
 remove a render, delete its global backup as well as its local output, otherwise
 the next startup restores it. The template never automatically deletes backups.
 
-For existing installations, input/workflow migration preserves local originals in
-`input.before-global` and `workflows.before-global`; conflicting filenames stop
-setup rather than overwrite your files. Existing verified local models are reused.
+For existing installations, input migration preserves local originals in
+`input.before-global`; conflicting filenames stop setup rather than overwrite your
+files. Existing verified local models are reused. An older version's workflow
+symlink is converted back to a local directory automatically. ComfyUI saves
+workflows with atomic rename, so the editor must not write directly to object
+storage. Saved workflows are copied and verified before the UI save returns
+success; a failed backup reports an error while retaining the local save.
 
 Set **`H3_GLOBAL_STORAGE=1`** to require the volume (fail at boot if it is absent),
 or `0` to keep the ordinary storage layout on a fresh installation. Default `auto`
 uses Global Storage only when the mount is attached. Existing symlinks are not
 automatically undone by setting `0`.
 
-This implementation has local transfer-failure, restore and render regression
-tests, but has **not yet been tested on a live RunPod Global Volume**. RunPod's beta
+This implementation has Linux CI for transfer-failure, restore, symlink, workflow
+save, and render regression tests, but has **not yet been tested on a live RunPod
+Global Volume**. RunPod's beta
 is object-storage-backed and recommends regional storage for workloads needing
 full POSIX behavior or frequent/concurrent writes; rendering stays local for that
-reason. See [RunPod Global Volumes](https://www.runpod.io/blog/global-volumes-beta).
+reason. Its cross-pod visibility is eventually consistent: stop writing on the old
+pod before moving, and wait for backups to become visible if a replacement cannot
+see them immediately. See [RunPod Global Volume limitations](https://docs.runpod.io/storage/globalvolume/overview)
+and [current mount-path behavior](https://docs.runpod.io/storage/globalvolume/globalvolume-pods#mount-paths).
 
 ## RunPod template settings
 
 | Setting | Value |
 |---|---|
 | Base image | `runpod/comfyui:1.4.0-rc.164-comfyuiv0.35.0-cuda12.8` (the same image as the LTX template) |
-| Container disk | 5 GB only with separate working storage; for Global Volumes see the working-disk sizing above |
-| Volume mount | `/workspace` |
-| Volume size | Regional layout: 64–80 GB; Global layout: 100 GB local working disk plus the Global Volume |
+| Container disk | **100 GB** for the Global Volume setup below |
+| Pod-local volume disk | **0 GB** for this setup; `/workspace` uses the container working disk |
+| Template volume mount path | `/workspace-global`; also verify the attached Global Volume's own mount field at deployment |
+| Global Volume | Attach at deployment; elastic capacity, no 64/80 GB size to enter |
 | Ports | HTTP `8188` (ComfyUI), HTTP `8888` (JupyterLab) |
-| Env vars | `HF_TOKEN` (optional), `FILEBROWSER_PASSWORD` (see below) |
+| Env vars | `H3_GLOBAL_STORAGE=1`, `FILEBROWSER_PASSWORD` (your own password); `HF_TOKEN` optional |
+
+These values are for **one Global Volume plus the container disk**. You do not
+need a regional network volume. For the traditional regional layout instead, set
+`H3_GLOBAL_STORAGE=0`, mount the regional volume at `/workspace` with 64–80 GB, and
+use a 5 GB container disk.
+
+At deployment, select the template and GPU first, then **Storage → Persistent
+storage → + Add volume** and choose your Global Volume. Edit its mount to
+**`/workspace-global`** before deploying. Leave `/workspace` on the container disk.
+Start with a GPU with 80–96 GB VRAM for initial testing; actual H3 memory usage has
+not been benchmarked for this workflow.
+
+Suggested environment values (all others may stay at defaults):
+
+```text
+H3_GLOBAL_STORAGE=1
+H3_GLOBAL_MOUNT=/workspace-global
+JUPYTER_NO_AUTH=1
+FILEBROWSER_PASSWORD=<your-own-password>
+```
+
+`JUPYTER_NO_AUTH=1` retains this template's existing no-login Jupyter behavior.
+For authenticated Jupyter, use `JUPYTER_NO_AUTH=0` and set `JUPYTER_PASSWORD`.
+Do not override `COMFYUI_PATH`: the base image starts ComfyUI at its fixed path.
 
 > **The image needs ComfyUI ≥ 0.35.0.** `MiniMaxH3AddGuide`, the node that pins your
 > voiceover, doesn't exist before 0.34.0, and tags like `runpod/comfyui:cuda12.8` or
-> `…-comfyuiv0.30.0-…` ship older builds. `setup.sh` warns at boot if the node is
+> `…-comfyuiv0.30.0-…` ship older builds. `setup.sh` stops at boot if the node is
 > missing. It deliberately doesn't update ComfyUI core, because on these images that
 > can reinstall torch and break the CUDA build.
 
-**Container start command.** RunPod's DNS is sometimes not ready when the container
-starts. This command pins public resolvers, waits, and retries the clone:
+**Container start command.** Paste this JSON into RunPod's container start command
+field (also provided as [`runpod-start.json`](runpod-start.json)). It retries the
+clone without overwriting RunPod's DNS configuration:
 
 ```json
 {
-  "entrypoint": ["bash", "-c"],
-  "cmd": ["echo 'nameserver 8.8.8.8' > /etc/resolv.conf && echo 'nameserver 1.1.1.1' >> /etc/resolv.conf && sleep 10 && rm -rf /tmp/temp_repo && for i in {1..10}; do git clone --depth 1 https://github.com/tenitsky/minimax-h3.git /tmp/temp_repo && break || sleep 5; done && chmod +x /tmp/temp_repo/setup.sh && /tmp/temp_repo/setup.sh"]
+  "entrypoint": ["bash", "-lc"],
+  "cmd": ["set -e; for attempt in 1 2 3 4 5 6 7 8 9 10; do repo=$(mktemp -d /tmp/minimax-h3.XXXXXX); if git clone --depth 1 https://github.com/tenitsky/minimax-h3.git \"$repo\"; then exec bash \"$repo/setup.sh\"; fi; sleep 5; done; echo 'FATAL: unable to clone minimax-h3 after 10 attempts' >&2; exit 1"]
 }
 ```
 
-Overwriting `/etc/resolv.conf` replaces RunPod's internal resolver with public DNS.
-That's harmless here, but remember it if you ever need internal name resolution.
+For the first launch, check the pod logs for **`Global Volume read/write/checksum
+probe passed`**, then **`enabled at /workspace-global/minimax-h3`**. Model downloads
+and first-time copy verification can take a while. Open ComfyUI once it is listening
+on port 8188. Test two chunks before starting a long render; after each one, expect
+**`chunk N backed up and verified`**, and after stitching expect **`final video
+backed up and verified`** followed by **`FINISHED`**.
 
 ## After it boots
 
@@ -252,7 +295,7 @@ file in the workflow's CLIPLoader.
 | `JUPYTER_NO_AUTH` | `1` | Disables Jupyter login (anyone with the URL gets a shell). Set `0` to keep the image's auth |
 | `JUPYTER_PASSWORD` | *(empty)* | Jupyter token, used when `JUPYTER_NO_AUTH=0` |
 | `FILEBROWSER_PASSWORD` | `adminadmin12` | FileBrowser on port 8080 (user `admin`). **Change the default** |
-| `COMFYUI_PATH` | `/workspace/runpod-slim/ComfyUI` | Override only for a different image layout |
+| `COMFYUI_PATH` | `/workspace/runpod-slim/ComfyUI` | Leave unset; must match the base image's fixed startup path |
 | `HF_HOME` | `/workspace/.cache/huggingface` | Keeps the HF cache on the volume, not the 5 GB container disk |
 | `H3_GLOBAL_STORAGE` | `auto` | Detect Global Volume; `1` requires it, `0` disables automatic configuration |
 | `H3_GLOBAL_MOUNT` | `/workspace-global` | Global Volume mount point; must be an actual mounted filesystem |

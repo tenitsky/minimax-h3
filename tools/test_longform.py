@@ -194,6 +194,32 @@ class LongformTests(unittest.TestCase):
         self.assertTrue(math.isnan(h3.H3LongformSplit.IS_CHANGED()))
 
     @unittest.skipUnless(shutil.which("ffmpeg"), "ffmpeg required")
+    def test_render_global_backup_and_replacement_pod_restore(self):
+        remote = Path(self.tmp.name) / "global"
+        restored = Path(self.tmp.name) / "replacement"
+        prompt = self.prompt("5 frames (~0.2s)")
+        audio = {"waveform": torch.zeros((1, 1, 24000 * 7)), "sample_rate": 24000}
+        with patch.object(h3.storage, "root", return_value=remote), contextlib.redirect_stdout(io.StringIO()):
+            index = 0
+            while True:
+                chunk, length, keep, count, last, _, _, lead = h3.H3LongformSplit().split(
+                    audio, index, 5, 5, 5, prompt=prompt, motion_carry="5 frames (~0.2s)")
+                images = torch.zeros((length, 16, 16, 3))
+                h3.H3LongformWrite().write(images, audio, index, count, keep, "test", "final.mp4",
+                                         chunk, False, lead, prompt, {"workflow": builder.build()})
+                self.assertTrue(h3.storage.valid(remote / "output/h3_longform/test" / f"chunk_{index:04d}.mp4"))
+                if last:
+                    break
+                index += 1
+            self.assertTrue(h3.storage.valid(remote / "output/final.mp4"))
+            h3.storage.restore(restored)
+            self.assertTrue((restored / "h3_longform/test/.carry/tail_0000.npz").exists())
+            self.assertTrue((restored / "h3_longform/test/workflow.json").exists())
+            folder_paths.get_output_directory = lambda: str(restored)
+            result = h3.H3LongformSplit().split(audio, 0, 5, 5, 5, prompt=prompt, motion_carry="5 frames (~0.2s)")
+            self.assertIsInstance(result[0], ExecutionBlocker)
+
+    @unittest.skipUnless(shutil.which("ffmpeg"), "ffmpeg required")
     def test_backup_failure_is_retried_before_skipping_local_chunk(self):
         prompt = self.prompt("5 frames (~0.2s)")
         audio = {"waveform": torch.zeros((1, 2, 24000 * 31)), "sample_rate": 24000}

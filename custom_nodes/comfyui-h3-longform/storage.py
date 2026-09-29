@@ -10,8 +10,45 @@ import json
 import os
 from pathlib import Path
 import shutil
+import tempfile
+import time
+import threading
+import uuid
 
 LOG = "[H3 Storage]"
+_workflow_lock = threading.Lock()
+
+
+def check_working_path(path):
+    """Reject object-backed scratch, including a Global Volume at /workspace."""
+    path = Path(path).resolve()
+    mount = Path(os.environ.get("H3_GLOBAL_MOUNT", "/workspace-global")).resolve()
+    if path == mount or mount in path.parents:
+        raise RuntimeError(f"Working path {path} is on Global Storage. Mount the Global Volume at /workspace-global and keep /workspace local.")
+    mountinfo = Path("/proc/self/mountinfo")
+    if mountinfo.exists():
+        matches = []
+        for line in mountinfo.read_text().splitlines():
+            fields = line.split()
+            target = Path(fields[4].replace("\\040", " ").replace("\\134", "\\"))
+            if target == path or target in path.parents:
+                matches.append((len(str(target)), fields[fields.index("-") + 1]))
+        kind = max(matches, default=(0, ""))[1].lower()
+        if any(name in kind for name in ("fuse", "s3fs", "gcs", "rclone")):
+            raise RuntimeError(f"Working path {path} uses {kind}. Set the Global Volume mount to /workspace-global; /workspace must be a local or regional working disk.")
+
+
+def wait_for(check, description, attempts=5):
+    """Allow short visibility delays without treating an incomplete copy as done."""
+    for attempt in range(attempts):
+        try:
+            if check():
+                return
+        except OSError:
+            pass
+        if attempt + 1 < attempts:
+            time.sleep(2)
+    raise IOError(f"Global Storage verification failed: {description}. Local files were retained; retry once storage is available.")
 
 
 def root():
@@ -65,18 +102,16 @@ def publish(source, destination):
     # Invalidate the old receipt before overwriting a previously completed file.
     receipt = receipt_path(destination)
     try:
-        if json.loads(receipt.read_text(encoding="utf-8")) == info and valid(destination, full=False):
+        if json.loads(receipt.read_text(encoding="utf-8")) == info and valid(destination):
             return
     except (OSError, ValueError):
         pass
     if receipt.exists():
         receipt.unlink()
     shutil.copyfile(source, destination)
-    if destination.stat().st_size != info["size"] or digest(destination) != info["sha256"]:
-        raise IOError(f"Global copy verification failed: {destination}")
+    wait_for(lambda: destination.stat().st_size == info["size"] and digest(destination) == info["sha256"], str(destination))
     receipt.write_text(json.dumps(info) + "\n", encoding="utf-8")
-    if not valid(destination, full=False):
-        raise IOError(f"Global completion receipt failed: {destination}")
+    wait_for(lambda: valid(destination, full=False), str(receipt))
 
 
 def backup_chunk(output_dir, session, index, carry=False):
@@ -112,11 +147,11 @@ def backup_workflow(output_dir, session, extra_pnginfo):
     publish(local, within(remote / "output", relative))
 
 
-def restore(output_dir):
+def restore(output_dir, saved=None):
     remote = root()
     if remote is None:
         return
-    saved = remote / "output"
+    saved = Path(saved) if saved is not None else remote / "output"
     restored = 0
     for receipt in sorted(saved.rglob("*.h3-ready")):
         source = Path(str(receipt)[:-len(".h3-ready")])
@@ -143,6 +178,95 @@ def restore(output_dir):
             temporary.unlink(missing_ok=True)
         restored += 1
     print(f"{LOG} restored {restored} completed render files")
+
+
+def backup_workflows(comfy_dir):
+    remote = root()
+    if remote is None:
+        return
+    local = Path(comfy_dir) / "user/default/workflows"
+    check_working_path(local)
+    with _workflow_lock:
+        for source in local.rglob("*.json"):
+            # ComfyUI writes via a temporary file, then replaces the .json locally.
+            # Invalid/incomplete manually copied JSON must not replace a good backup.
+            json.loads(source.read_text(encoding="utf-8"))
+            publish(source, within(remote / "workflows", source.relative_to(local)))
+
+
+def install_workflow_backup():
+    """Back up successful UI saves before returning success to the browser."""
+    if not os.environ.get("H3_GLOBAL_ROOT"):
+        return
+    import asyncio
+    from aiohttp import web
+    from server import PromptServer
+
+    @web.middleware
+    async def persist_workflow(request, handler):
+        response = await handler(request)
+        path = request.path.removeprefix("/api")
+        if request.method == "POST" and path.startswith("/userdata/") and response.status < 400:
+            try:
+                await asyncio.to_thread(backup_workflows, os.environ["COMFYUI_PATH"])
+            except Exception as error:
+                raise web.HTTPServiceUnavailable(text=f"Saved locally, but Global Storage backup failed: {error}") from error
+        return response
+
+    PromptServer.instance.app.middlewares.append(persist_workflow)
+
+
+def local_workflows(comfy):
+    """Migrate the earlier global workflow symlink back to local editing safely."""
+    remote = root() / "workflows"
+    local = comfy / "user/default/workflows"
+    if local.is_symlink():
+        if local.resolve() != remote.resolve():
+            raise RuntimeError(f"Workflow link points elsewhere: {local}")
+        local.unlink()  # remove only the local link; global files remain untouched
+    local.mkdir(parents=True, exist_ok=True)
+    # Earlier versions stored workflows directly, with no receipt. Import valid
+    # legacy JSON once; new backups use receipts and restore verification.
+    for source in remote.rglob("*.json"):
+        if receipt_path(source).exists():
+            continue
+        try:
+            json.loads(source.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        destination = within(local, source.relative_to(remote))
+        if not destination.exists():
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            temporary = destination.with_name(destination.name + ".restoring")
+            shutil.copyfile(source, temporary)
+            if digest(temporary) != digest(source):
+                temporary.unlink()
+                raise IOError(f"Workflow migration verification failed: {source}")
+            os.replace(temporary, destination)
+    restore(local, remote)
+    backup_workflows(comfy)
+
+
+def probe(comfy):
+    remote = root()
+    remote.mkdir(parents=True, exist_ok=True)
+    # All POSIX-only operations happen locally. Test only ordinary remote I/O.
+    target = remote / ".checks" / uuid.uuid4().hex
+    with tempfile.TemporaryDirectory(prefix=".h3-check-", dir=comfy) as directory:
+        source = Path(directory) / "sample.bin"
+        try:
+            source.write_bytes(os.urandom(4096))
+            publish(source, target)
+            link = Path(directory) / "model-link"
+            link.symlink_to(target)
+            if digest(link) != digest(source):
+                raise IOError("Cannot read the Global Volume through a local model link")
+            source.write_bytes(os.urandom(4096))
+            publish(source, target)  # replacing existing objects must also work
+        finally:
+            receipt_path(target).unlink(missing_ok=True)
+            target.unlink(missing_ok=True)
+    print(f"{LOG} Global Volume read/write/checksum probe passed")
 
 
 def link_directory(local, remote):
@@ -177,15 +301,15 @@ def configure(comfy_dir):
     if remote is None:
         raise RuntimeError("Global storage was not enabled")
     comfy = Path(comfy_dir).resolve()
-    mount = Path(os.environ.get("H3_GLOBAL_MOUNT", "/workspace-global")).resolve()
-    if comfy == mount or mount in comfy.parents:
-        raise RuntimeError("ComfyUI must remain on the working disk, outside the Global Volume.")
+    for path in (comfy, comfy / "output", comfy / "temp", os.environ.get("HF_HOME", comfy / ".cache")):
+        check_working_path(path)
     # 40 GiB of free scratch covers one staged model download plus render space.
     required = float(os.environ.get("H3_LOCAL_MIN_FREE_GB", "40")) * 1024 ** 3
     if shutil.disk_usage(comfy).free < required:
         raise RuntimeError("Not enough working disk space. Allocate a larger local disk (100 GB recommended).")
+    probe(comfy)
     link_directory(comfy / "input", remote / "input")
-    link_directory(comfy / "user/default/workflows", remote / "workflows")
+    local_workflows(comfy)
     restore(comfy / "output")
     print(f"{LOG} enabled at {remote}; render scratch remains at {comfy / 'output'}")
 
@@ -218,11 +342,15 @@ def link_model(comfy_dir, relative):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("action", choices=["configure", "model-ready", "publish-model", "link-model"])
+    parser.add_argument("action", choices=["configure", "preflight", "backup-workflows", "model-ready", "publish-model", "link-model"])
     parser.add_argument("path")
     parser.add_argument("relative", nargs="?")
     args = parser.parse_args()
-    if args.action == "configure":
+    if args.action == "preflight":
+        check_working_path(args.path)
+    elif args.action == "backup-workflows":
+        backup_workflows(args.path)
+    elif args.action == "configure":
         configure(args.path)
     elif args.action == "model-ready":
         raise SystemExit(0 if valid(model_path(args.path)) else 1)

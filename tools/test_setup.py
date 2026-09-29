@@ -58,6 +58,16 @@ test ! -e "$DEST"
 test -e "$DEST.hf.part"
 ''')
 
+    def test_bootstrap_command_matches_readme_and_parses(self):
+        command_file = (ROOT / "runpod-start.json").read_text(encoding="utf-8")
+        config = json.loads(command_file)
+        self.assertIn(command_file.strip(), (ROOT / "README.md").read_text(encoding="utf-8"))
+        self.assertEqual(config["entrypoint"], ["bash", "-lc"])
+        self.assertNotIn("resolv.conf", config["cmd"][0])
+        script = self.directory / "bootstrap.sh"
+        script.write_text(config["cmd"][0], encoding="utf-8")
+        subprocess.run([BASH, "-n", str(script)], check=True)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

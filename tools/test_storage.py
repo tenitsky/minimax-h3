@@ -1,9 +1,12 @@
 """Standard-library persistence tests: python tools/test_storage.py."""
 import importlib.util
+import asyncio
 import json
 import os
 from pathlib import Path
 import tempfile
+import sys
+import types
 import unittest
 from unittest.mock import patch
 
@@ -141,6 +144,70 @@ class StorageTests(unittest.TestCase):
         self.assertEqual((self.newpod / "user/default/workflows/my.json").read_bytes(), b"{}")
         self.assertTrue((self.local / "input.before-global/portrait.png").exists())
         self.assertFalse((self.local / "output").is_symlink())
+        self.assertFalse((self.local / "user/default/workflows").is_symlink())
+        # Match ComfyUI's actual save operation: mkstemp + atomic local replace.
+        workflow = self.local / "user/default/workflows/my.json"
+        temporary = workflow.with_suffix(".tmp")
+        temporary.write_text('{"updated": true}')
+        os.replace(temporary, workflow)
+        storage.backup_workflows(self.local)
+        self.assertTrue(storage.valid(self.remote / "workflows/my.json"))
+
+    def test_old_workflow_symlink_is_migrated_to_local_edits(self):
+        self.require_symlinks()
+        self.write(self.remote / "workflows/legacy.json", b'{"nodes": []}')
+        local = self.local / "user/default/workflows"
+        local.parent.mkdir(parents=True)
+        local.symlink_to(self.remote / "workflows", target_is_directory=True)
+        storage.local_workflows(self.local)
+        self.assertFalse(local.is_symlink())
+        self.assertEqual((local / "legacy.json").read_bytes(), b'{"nodes": []}')
+        self.assertTrue(storage.valid(self.remote / "workflows/legacy.json"))
+
+    def test_same_size_corruption_is_repaired_on_republish(self):
+        source = self.write(self.local / "file", b"good")
+        remote = self.remote / "file"
+        storage.publish(source, remote)
+        remote.write_bytes(b"oops")
+        storage.publish(source, remote)
+        self.assertTrue(storage.valid(remote))
+
+    def test_working_directory_rejects_object_filesystems(self):
+        with patch.object(Path, "exists", return_value=True), patch.object(Path, "read_text", return_value="1 0 0:1 / / rw - overlay overlay rw\n2 1 0:2 / /workspace rw - fuse.global global rw\n"):
+            if os.name != "nt":
+                with self.assertRaisesRegex(RuntimeError, "fuse.global"):
+                    storage.check_working_path("/workspace/runpod-slim/ComfyUI")
+        with self.assertRaisesRegex(RuntimeError, "on Global Storage"):
+            storage.check_working_path(self.remote / "ComfyUI")
+
+    def test_visibility_delay_is_retried(self):
+        with patch.object(storage.time, "sleep") as sleep:
+            attempts = iter([False, False, True])
+            storage.wait_for(lambda: next(attempts), "delayed file")
+            self.assertEqual(sleep.call_count, 2)
+
+    @unittest.skipUnless(importlib.util.find_spec("aiohttp"), "aiohttp required for middleware tests")
+    def test_ui_save_backs_up_and_reports_backup_failure(self):
+        from aiohttp import web
+        middlewares = []
+        server = types.SimpleNamespace(PromptServer=types.SimpleNamespace(instance=types.SimpleNamespace(app=types.SimpleNamespace(middlewares=middlewares))))
+        with patch.dict(sys.modules, {"server": server}), patch.dict(os.environ, {"COMFYUI_PATH": str(self.local)}):
+            storage.install_workflow_backup()
+            workflow = self.local / "user/default/workflows/test.json"
+
+            async def handler(request):
+                self.write(workflow, b'{"nodes": []}')
+                return web.json_response({"saved": True})
+
+            for path in ("/userdata/workflows/test.json", "/api/userdata/workflows/test.json"):
+                request = types.SimpleNamespace(method="POST", path=path)
+                response = asyncio.run(middlewares[0](request, handler))
+                self.assertEqual(response.status, 200)
+                self.assertTrue(storage.valid(self.remote / "workflows/test.json"))
+            with patch.object(storage, "backup_workflows", side_effect=OSError("unavailable")):
+                with self.assertRaises(web.HTTPServiceUnavailable):
+                    asyncio.run(middlewares[0](request, handler))
+                self.assertTrue(workflow.exists())
 
     def test_migration_conflicts_and_space_guard(self):
         self.write(self.local / "input/file.png", b"local")

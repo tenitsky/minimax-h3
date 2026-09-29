@@ -19,12 +19,18 @@ if [ "${JUPYTER_NO_AUTH:-1}" = "1" ]; then
 fi
 
 echo "=== Ensuring System Dependencies are Installed ==="
-apt-get update && apt-get install -y wget ca-certificates
+apt-get update
+apt-get install -y wget ca-certificates util-linux
 # ffmpeg does the per-chunk encoding and the final stitch.
 command -v ffmpeg >/dev/null || apt-get install -y ffmpeg
 
 # Paths from the runpod/comfyui image's /start.sh (runpod-workers/comfyui-base).
-COMFYUI_PATH="${COMFYUI_PATH:-/workspace/runpod-slim/ComfyUI}"
+export COMFYUI_PATH="${COMFYUI_PATH:-/workspace/runpod-slim/ComfyUI}"
+if [ "$COMFYUI_PATH" != /workspace/runpod-slim/ComfyUI ]; then
+  echo "FATAL: this image's /start.sh uses /workspace/runpod-slim/ComfyUI. Leave COMFYUI_PATH unset."
+  exit 1
+fi
+python3 "$SCRIPT_DIR/custom_nodes/comfyui-h3-longform/storage.py" preflight "$COMFYUI_PATH"
 
 # Global Volumes use a separate object-backed mount, never a replacement for the
 # working filesystem containing Python, caches and ffmpeg's temporary files.
@@ -35,7 +41,7 @@ case "${H3_GLOBAL_STORAGE:-auto}" in
   *) echo "FATAL: H3_GLOBAL_STORAGE must be auto, 0 or 1."; exit 1 ;;
 esac
 if [ "$H3_GLOBAL_STORAGE" = "1" ]; then
-  mountpoint -q "$H3_GLOBAL_MOUNT" || { echo "FATAL: attach a Global Volume at $H3_GLOBAL_MOUNT."; exit 1; }
+  mountpoint -q "$H3_GLOBAL_MOUNT" || { echo "FATAL: attach a Global Volume and set its mount path to $H3_GLOBAL_MOUNT (not /workspace)."; exit 1; }
   export H3_GLOBAL_ROOT="${H3_GLOBAL_ROOT:-$H3_GLOBAL_MOUNT/minimax-h3}"
   case "$COMFYUI_PATH/" in "$H3_GLOBAL_MOUNT/"*) echo "FATAL: ComfyUI must stay on the working disk."; exit 1 ;; esac
 else
@@ -64,7 +70,10 @@ DOWNLOAD_REF2VA="${DOWNLOAD_REF2VA:-0}"
 # Self-healing check prevents directory collisions and fixes broken folders
 if [ ! -f "$COMFYUI_PATH/main.py" ]; then
   echo "First time setup: Copying baked ComfyUI to workspace..."
-  rm -rf "$COMFYUI_PATH"
+  if [ -e "$COMFYUI_PATH" ]; then
+    echo "FATAL: existing ComfyUI directory has no main.py; refusing to delete user files."
+    exit 1
+  fi
   mkdir -p "$(dirname "$COMFYUI_PATH")"
   cp -r /opt/comfyui-baked "$COMFYUI_PATH"
 fi
@@ -87,9 +96,10 @@ echo "ComfyUI Python: $PY"
 # Fail loudly, not 20 minutes into a render: without this node the workflow cannot
 # pin the voiceover and will not load.
 if ! grep -q 'node_id="MiniMaxH3AddGuide"' "$COMFYUI_PATH/comfy_extras/nodes_minimax_h3.py" 2>/dev/null; then
-  echo "WARNING: this ComfyUI has no MiniMaxH3AddGuide node - it is older than 0.34."
+  echo "FATAL: this ComfyUI has no MiniMaxH3AddGuide node - it is older than 0.34."
   echo "         The bundled long-form workflow will not load. Use the image"
   echo "         runpod/comfyui:1.4.0-rc.164-comfyuiv0.35.0-cuda12.8 (or newer)."
+  exit 1
 fi
 
 # 1. Custom nodes: the small H3 Longform pack bundled in this repo (no dependencies
@@ -99,8 +109,8 @@ mkdir -p "$COMFYUI_PATH/custom_nodes"
 if [ -d "$SCRIPT_DIR/custom_nodes" ]; then
   cp -r "$SCRIPT_DIR/custom_nodes/"* "$COMFYUI_PATH/custom_nodes/"
 fi
-find "$COMFYUI_PATH/custom_nodes/" -maxdepth 2 -name "requirements.txt" \
-  -exec "$PY" -m pip install -q -r {} \;
+# The bundled nodes only use image-provided torch/numpy and system ffmpeg. Do not
+# reinstall every baked custom node's dependencies and risk replacing CUDA torch.
 
 STORAGE_HELPER="$COMFYUI_PATH/custom_nodes/comfyui-h3-longform/storage.py"
 if [ "$H3_GLOBAL_STORAGE" = "1" ]; then
@@ -279,6 +289,9 @@ if [ -d "$SCRIPT_DIR/workflows" ]; then
   ls "$WF_DEST" | sed 's/^/  workflow: /'
 else
   echo "No workflows directory found in repo, skipping."
+fi
+if [ "$H3_GLOBAL_STORAGE" = "1" ]; then
+  "$PY" "$STORAGE_HELPER" backup-workflows "$COMFYUI_PATH"
 fi
 
 # 5. Clean up the temporary git folder

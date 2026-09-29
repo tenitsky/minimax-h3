@@ -90,8 +90,9 @@ raises an error; resume from 0 retries backups for locally completed chunks too.
 Write only announces `FINISHED` after the final video's backup has verified.
 
 Setup on a replacement pod restores completed backups automatically. Partial or
-corrupt copies are ignored. Inputs and saved workflows live directly on the Global
-Volume; the current UI workflow is also captured with each rendered chunk. Queue
+corrupt copies are ignored. Inputs live directly on the Global Volume. Sidebar
+workflows are edited locally (ComfyUI requires atomic rename) and backed up after
+successful UI saves; the current UI workflow is also captured with each rendered chunk. Queue
 from 0 to resume with the same settings. Use only one writing pod per global
 namespace; cross-pod concurrent writes are not supported in Global mode.
 
