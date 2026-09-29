@@ -12,6 +12,7 @@ import sys
 import tempfile
 import types
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 import torch
@@ -28,6 +29,7 @@ class ExecutionBlocker:
 def load(name, path):
     spec = importlib.util.spec_from_file_location(name, path)
     module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
     spec.loader.exec_module(module)
     return module
 
@@ -190,6 +192,22 @@ class LongformTests(unittest.TestCase):
 
     def test_resume_cache_is_invalidated(self):
         self.assertTrue(math.isnan(h3.H3LongformSplit.IS_CHANGED()))
+
+    @unittest.skipUnless(shutil.which("ffmpeg"), "ffmpeg required")
+    def test_backup_failure_is_retried_before_skipping_local_chunk(self):
+        prompt = self.prompt("5 frames (~0.2s)")
+        audio = {"waveform": torch.zeros((1, 2, 24000 * 31)), "sample_rate": 24000}
+        split = h3.H3LongformSplit()
+        chunk, length, keep, count, _, _, _, lead = split.split(audio, 0, 12, 5, 15, prompt=prompt, motion_carry="5 frames (~0.2s)")
+        images = torch.zeros((length, 16, 16, 3))
+        with patch.object(h3.storage, "backup_chunk", side_effect=OSError("upload failed")):
+            with self.assertRaisesRegex(OSError, "upload failed"):
+                h3.H3LongformWrite().write(images, audio, 0, count, keep, "test", "final.mp4", chunk, False, lead, prompt)
+        self.assertTrue((Path(self.tmp.name) / "h3_longform/test/chunk_0000.mp4").exists())
+        with patch.object(h3.storage, "backup_chunk") as backup:
+            result = split.split(audio, 0, 12, 5, 15, prompt=prompt, motion_carry="5 frames (~0.2s)")
+            self.assertIsInstance(result[0], ExecutionBlocker)
+            backup.assert_called_once_with(self.tmp.name, "test", 0, True)
 
 
 if __name__ == "__main__":

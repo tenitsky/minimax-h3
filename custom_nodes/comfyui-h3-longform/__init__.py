@@ -44,6 +44,7 @@ import numpy as np
 import torch
 
 import folder_paths
+from . import storage
 
 try:
     # Returning this from a node blocks everything downstream, so an
@@ -387,6 +388,7 @@ class H3LongformSplit:
 
     def split(self, audio, chunk_index, target_seconds, min_seconds, max_seconds,
               cut_mode="pause", skip_existing=True, motion_carry="off", prompt=None):
+        storage.root()  # fail clearly if an enabled Global Volume disappeared
         if min_seconds > max_seconds:
             min_seconds, max_seconds = max_seconds, min_seconds
         carry_setting = CARRY_OPTIONS.get(motion_carry, 0)
@@ -425,6 +427,10 @@ class H3LongformSplit:
                                 f"chunk_{chunk_index:04d}.mp4")
             tail_ready = not carry_setting or _read_tail(session, chunk_index, carry_setting) is not None
             if os.path.exists(done) and tail_ready:
+                # A previous attempt may have encoded locally but failed during
+                # upload. Retry persistence before declaring this chunk complete.
+                storage.backup_chunk(folder_paths.get_output_directory(), session,
+                                     chunk_index, bool(carry_setting))
                 print(f"{LOG} chunk {chunk_index + 1}/{len(spans)} already rendered "
                       f"- skipping.")
                 return blocked
@@ -558,7 +564,7 @@ class H3LongformWrite:
                                        "tooltip": "Wire from Split's carry_frames: "
                                                   "the lead-in frames to drop."}),
             },
-            "hidden": {"prompt": "PROMPT"},
+            "hidden": {"prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO"},
         }
 
     RETURN_TYPES = ("STRING",)
@@ -569,7 +575,7 @@ class H3LongformWrite:
 
     def write(self, images, original_audio, chunk_index, total_chunks, keep_frames,
               session, filename, chunk_audio=None, stop_when_done=True, trim_start=0,
-              prompt=None):
+              prompt=None, extra_pnginfo=None):
         ff = _ffmpeg()
         sdir = _session_dir(session)
 
@@ -628,6 +634,9 @@ class H3LongformWrite:
             if chunk_wav and os.path.exists(chunk_wav):
                 os.remove(chunk_wav)
         os.replace(chunk_tmp, chunk_mp4)
+        storage.backup_workflow(folder_paths.get_output_directory(), session, extra_pnginfo)
+        storage.backup_chunk(folder_paths.get_output_directory(), session,
+                             chunk_index, bool(carry and chunk_index < total_chunks - 1))
 
         msg = f"chunk {chunk_index + 1}/{total_chunks} written ({n} frames)"
         print(f"{LOG} {msg}")
@@ -672,6 +681,8 @@ class H3LongformWrite:
         # Keep tails for a resumed render or a retry of the final chunk. Removing
         # them here would make the next run skip chunks whose lead-ins are missing.
 
+        # Do not signal success or clear the queue until the final upload verifies.
+        storage.backup_final(folder_paths.get_output_directory(), filename)
         msg = f"FINISHED: {out}"
         print(f"{LOG} {msg}")
 

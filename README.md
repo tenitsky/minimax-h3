@@ -61,17 +61,76 @@ the automatic fallback.
 | *optional* `minimax_h3_ref2va_pruned_int8_convrot.safetensors` + ref2v turbo LoRA | 23 GB | `diffusion_models/`, `loras/` |
 | *alternative* `qwen3vl_32b_minimax_h3_int8_convrot.safetensors` | 27.1 GB | `text_encoders/` |
 
-The default set is about **42 GB**. Use a **64 GB volume at minimum; 80 GB is
-recommended**, and 100 GB if you also enable Ref2VA.
+The default set is about **42 GB**. With ordinary regional storage, use a **64 GB
+volume at minimum; 80 GB is recommended**, and 100 GB if you also enable Ref2VA.
+For Global Volumes, use the automatic storage layout below instead.
+
+## Automatic Global Volume storage
+
+Attach a RunPod **Global Volume** when deploying. Setup detects its mount at
+`/workspace-global` automatically; no manual copy commands or extra regional
+network volume are needed. Use one writing pod per `minimax-h3` storage namespace.
+
+| Data | Location and behavior |
+|---|---|
+| Models | `/workspace-global/minimax-h3/models/`; downloaded once, verified, then reused through local links |
+| Uploaded portraits and audio | `/workspace-global/minimax-h3/input/`; ComfyUI's input directory points here |
+| Saved sidebar workflows | `/workspace-global/minimax-h3/workflows/` |
+| ComfyUI, Python, download cache, rendering and stitching | Pod working disk under `/workspace` |
+| Completed chunks, carry tails and final videos | Copied automatically to `/workspace-global/minimax-h3/output/` and checksum-verified |
+
+Allocate **100 GB of pod-local working disk backing `/workspace`** as a starting
+point (not a measured capacity guarantee; long/high-resolution renders need more).
+If `/workspace` is on the container disk, set the **container disk to 100 GB**.
+If it is a separate pod-local volume disk, size that disk to 100 GB instead.
+The old 5 GB container setting is only suitable when `/workspace` has its own
+sufficiently large working volume. Setup requires at least **40 GiB free after
+copying ComfyUI**, for a staged model download and rendering scratch.
+
+Models download to local scratch one at a time, then copy to Global Storage and
+are verified before their local staging copy is removed. Uploads do not rely on
+remote atomic renames or locks. The node copies each chunk and its motion-carry
+tail before reporting that chunk complete; the final video is backed up before
+`FINISHED` appears or the pending queue is cleared. A failed backup stops that job
+with an error, retaining local files for retry. Stop the pending queue after an
+error and restart from chunk 0 once storage is available again.
+
+**Replacement pod:** attach the same Global Volume and use the same template.
+Setup automatically restores verified render files to the new working disk.
+Open your saved workflow, set `chunk_index` to **0**, and queue again; completed
+chunks are skipped. A copy of the workflow used for a render is also saved at
+`output/h3_longform/<session>/workflow.json` when queued from the ComfyUI UI.
+Queue submission itself is manual; files are restored automatically.
+
+An abrupt termination can lose the currently rendering/uploading chunk. Completed,
+verified backups survive. Partial copies are ignored on restore. Keep the same
+session settings when resuming; use a new session for a new render. To permanently
+remove a render, delete its global backup as well as its local output, otherwise
+the next startup restores it. The template never automatically deletes backups.
+
+For existing installations, input/workflow migration preserves local originals in
+`input.before-global` and `workflows.before-global`; conflicting filenames stop
+setup rather than overwrite your files. Existing verified local models are reused.
+
+Set **`H3_GLOBAL_STORAGE=1`** to require the volume (fail at boot if it is absent),
+or `0` to keep the ordinary storage layout on a fresh installation. Default `auto`
+uses Global Storage only when the mount is attached. Existing symlinks are not
+automatically undone by setting `0`.
+
+This implementation has local transfer-failure, restore and render regression
+tests, but has **not yet been tested on a live RunPod Global Volume**. RunPod's beta
+is object-storage-backed and recommends regional storage for workloads needing
+full POSIX behavior or frequent/concurrent writes; rendering stays local for that
+reason. See [RunPod Global Volumes](https://www.runpod.io/blog/global-volumes-beta).
 
 ## RunPod template settings
 
 | Setting | Value |
 |---|---|
 | Base image | `runpod/comfyui:1.4.0-rc.164-comfyuiv0.35.0-cuda12.8` (the same image as the LTX template) |
-| Container disk | 5 GB |
+| Container disk | 5 GB only with separate working storage; for Global Volumes see the working-disk sizing above |
 | Volume mount | `/workspace` |
-| Volume size | 64–80 GB |
+| Volume size | Regional layout: 64–80 GB; Global layout: 100 GB local working disk plus the Global Volume |
 | Ports | HTTP `8188` (ComfyUI), HTTP `8888` (JupyterLab) |
 | Env vars | `HF_TOKEN` (optional), `FILEBROWSER_PASSWORD` (see below) |
 
@@ -114,7 +173,7 @@ ComfyUI's own examples are under **Workflow → Browse Templates → Video → M
 (T2V, I2V, R2V, Multiframe, ControlNet). I2V works with the default downloads. R2V
 needs `DOWNLOAD_REF2VA=1`.
 
-> `setup.sh` copies workflows with `cp -n`, so a workflow you edited on the pod is never
+> `setup.sh` skips existing workflows, so a workflow you edited on the pod is never
 > overwritten on reboot. The flip side is that pushing an updated workflow to this
 > repo won't reach an existing volume until you delete the old file from
 > `ComfyUI/user/default/workflows/`.
@@ -195,6 +254,10 @@ file in the workflow's CLIPLoader.
 | `FILEBROWSER_PASSWORD` | `adminadmin12` | FileBrowser on port 8080 (user `admin`). **Change the default** |
 | `COMFYUI_PATH` | `/workspace/runpod-slim/ComfyUI` | Override only for a different image layout |
 | `HF_HOME` | `/workspace/.cache/huggingface` | Keeps the HF cache on the volume, not the 5 GB container disk |
+| `H3_GLOBAL_STORAGE` | `auto` | Detect Global Volume; `1` requires it, `0` disables automatic configuration |
+| `H3_GLOBAL_MOUNT` | `/workspace-global` | Global Volume mount point; must be an actual mounted filesystem |
+| `H3_GLOBAL_ROOT` | `<mount>/minimax-h3` | Global namespace for models, inputs, workflows and verified output backups |
+| `H3_LOCAL_MIN_FREE_GB` | `40` | Minimum free GiB required on the ComfyUI working disk in Global mode |
 
 ComfyUI runs from its own virtualenv (`$COMFYUI_PATH/.venv-cu128`). If you install
 anything by hand, use that interpreter:
@@ -212,7 +275,9 @@ anything by hand, use that interpreter:
 │   └── comfyui-h3-longform/               # Split / Carry / Write + Stitch / Name From Audio File
 ├── tools/
 │   ├── build_workflow.py                  # generates the workflow JSON; re-run after edits
-│   └── test_longform.py                   # CPU + ffmpeg regression checks
+│   ├── test_longform.py                   # CPU + ffmpeg regression checks
+│   ├── test_storage.py                    # backup failure and replacement-pod restore checks
+│   └── test_setup.py                      # Bash download checks using local fixtures
 └── workflows/
     └── minimax_h3_long_video_workflow.json
 ```

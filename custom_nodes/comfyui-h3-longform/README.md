@@ -81,7 +81,22 @@ A missing or too-short tail stops the render with instructions to resume from 0.
 
 Intermediate files live in `output/h3_longform/<session>/`.
 
+## Global Volume backups
+
+When setup detects `/workspace-global`, encoding and stitching still run on the
+working disk. After each completed chunk, Write copies its carry tail and video to
+`/workspace-global/minimax-h3/output/` and verifies their checksums. A failed copy
+raises an error; resume from 0 retries backups for locally completed chunks too.
+Write only announces `FINISHED` after the final video's backup has verified.
+
+Setup on a replacement pod restores completed backups automatically. Partial or
+corrupt copies are ignored. Inputs and saved workflows live directly on the Global
+Volume; the current UI workflow is also captured with each rendered chunk. Queue
+from 0 to resume with the same settings. Use only one writing pod per global
+namespace; cross-pod concurrent writes are not supported in Global mode.
+
 Run local CPU checks with `python tools/test_longform.py` from the template root
 (requires torch, numpy, ffmpeg and ffprobe). They use synthetic frames to verify
 planning, audio overlap, carry loading, trimming, resume, workflow wiring, and mux
 timing without downloading model weights.
+Run `python tools/test_storage.py` for standard-library-only persistence tests.
