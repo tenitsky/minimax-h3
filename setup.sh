@@ -6,6 +6,15 @@ echo "=== Starting MiniMax H3 Template Setup ==="
 echo "LICENCE: MiniMax H3 open weights are NOT licensed for use in the US, EU, UK or"
 echo "South Korea (MiniMax H3 Community License). See README.md before using this pod."
 
+# Refuse a disposable workspace before doing installation work.
+# The image's /start.sh fixes ComfyUI at this path.
+export COMFYUI_PATH="${COMFYUI_PATH:-/workspace/runpod-slim/ComfyUI}"
+if [ "$COMFYUI_PATH" != /workspace/runpod-slim/ComfyUI ]; then
+  echo "FATAL: this image's /start.sh uses /workspace/runpod-slim/ComfyUI. Leave COMFYUI_PATH unset."
+  exit 1
+fi
+python3 "$SCRIPT_DIR/custom_nodes/comfyui-h3-longform/storage.py" preflight "$COMFYUI_PATH"
+
 # Apply before the image starts Jupyter; an empty JUPYTER_PASSWORD alone can
 # trigger automatic token generation in /start.sh.
 if [ "${JUPYTER_NO_AUTH:-1}" = "1" ]; then
@@ -24,13 +33,12 @@ apt-get install -y wget ca-certificates util-linux
 # ffmpeg does the per-chunk encoding and the final stitch.
 command -v ffmpeg >/dev/null || apt-get install -y ffmpeg
 
-# Paths from the runpod/comfyui image's /start.sh (runpod-workers/comfyui-base).
-export COMFYUI_PATH="${COMFYUI_PATH:-/workspace/runpod-slim/ComfyUI}"
-if [ "$COMFYUI_PATH" != /workspace/runpod-slim/ComfyUI ]; then
-  echo "FATAL: this image's /start.sh uses /workspace/runpod-slim/ComfyUI. Leave COMFYUI_PATH unset."
-  exit 1
-fi
-python3 "$SCRIPT_DIR/custom_nodes/comfyui-h3-longform/storage.py" preflight "$COMFYUI_PATH"
+# Jupyter serves /workspace in the base image. Keep its settings and user data on
+# that persistent volume too; /root belongs to the disposable container disk.
+export JUPYTER_CONFIG_DIR=/workspace/.jupyter
+export JUPYTER_DATA_DIR=/workspace/.local/share/jupyter
+export IPYTHONDIR=/workspace/.ipython
+mkdir -p "$JUPYTER_CONFIG_DIR" "$JUPYTER_DATA_DIR" "$IPYTHONDIR"
 
 # Global Volumes use a separate object-backed mount, never a replacement for the
 # working filesystem containing Python, caches and ffmpeg's temporary files.

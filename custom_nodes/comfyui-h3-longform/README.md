@@ -84,7 +84,8 @@ Intermediate files live in `output/h3_longform/<session>/`.
 ## Global Volume backups
 
 When setup detects `/workspace-global`, encoding and stitching still run on the
-working disk. After each completed chunk, Write copies its carry tail and video to
+persistent regional Network Volume at `/workspace`. After each completed chunk,
+Write copies its carry tail and video to
 `/workspace-global/minimax-h3/output/` and verifies their checksums. A failed copy
 raises an error; resume from 0 retries backups for locally completed chunks too.
 Write only announces `FINISHED` after the final video's backup has verified.

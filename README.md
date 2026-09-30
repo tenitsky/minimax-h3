@@ -36,14 +36,16 @@ H3 only accepts frame counts on a **17k+5 grid**: 124, 141, 158 … 362, or abou
 
 On first pod boot, `setup.sh`:
 
-1. Copies the baked ComfyUI from `/opt/comfyui-baked` to `/workspace/runpod-slim/ComfyUI`
+1. Requires a separate POSIX volume at `/workspace`; refuses container-disk or
+   Global Volume working storage
+2. Copies the baked ComfyUI from `/opt/comfyui-baked` to `/workspace/runpod-slim/ComfyUI`
    (self-healing, skip-if-present)
-2. Checks that the image's ComfyUI has `MiniMaxH3AddGuide`, and stops if not
-3. Installs the bundled `comfyui-h3-longform` nodes (4 nodes, no dependencies besides
+3. Checks that the image's ComfyUI has `MiniMaxH3AddGuide`, and stops if not
+4. Installs the bundled `comfyui-h3-longform` nodes (4 nodes, no dependencies besides
    ffmpeg)
-4. Downloads the H3 model files (skip-if-exists, resumable)
-5. Installs `minimax_h3_long_video_workflow` into ComfyUI's **Workflows** sidebar
-6. Hands over to `/start.sh` (ComfyUI on port **8188**)
+5. Downloads the H3 model files (skip-if-exists, resumable)
+6. Installs `minimax_h3_long_video_workflow` into ComfyUI's **Workflows** sidebar
+7. Hands over to `/start.sh` (ComfyUI on port **8188**, JupyterLab on **8888**)
 
 ## Models pulled
 
@@ -67,28 +69,29 @@ For Global Volumes, use the automatic storage layout below instead.
 
 ## Automatic Global Volume storage
 
-Attach a RunPod **Global Volume** when deploying, and **explicitly set its mount
-path to `/workspace-global`**. RunPod currently defaults a lone Global Volume to
-`/workspace`; that default is wrong for this template because ComfyUI needs a
-regular working filesystem there. Setup detects the configured mount automatically;
-no manual copy commands or extra regional
-network volume are needed. Use one writing pod per `minimax-h3` storage namespace.
+Use **two persistent volumes**: a regional **Network Volume at `/workspace`** for
+the working environment, and a **Global Volume at `/workspace-global`** for shared
+models and backups. The container disk is disposable; it must not hold the working
+environment. Setup configures storage automatically after the volumes are attached.
+Use one writing pod per `minimax-h3` storage namespace.
 
 | Data | Location and behavior |
 |---|---|
 | Models | `/workspace-global/minimax-h3/models/`; downloaded once, verified, then reused through local links |
 | Uploaded portraits and audio | `/workspace-global/minimax-h3/input/`; ComfyUI's input directory points here |
 | Saved sidebar workflows | Edited locally; copied to `/workspace-global/minimax-h3/workflows/` after successful UI saves |
-| ComfyUI, Python, download cache, rendering and stitching | Pod working disk under `/workspace` |
+| ComfyUI, its Python virtualenv, custom nodes, download cache, rendering and stitching | Persistent Network Volume under `/workspace` |
+| Jupyter notebooks, settings and IPython data | Persistent Network Volume: save notebooks under `/workspace`; settings in `.jupyter`, `.local/share/jupyter`, and `.ipython` there |
 | Completed chunks, carry tails and final videos | Copied automatically to `/workspace-global/minimax-h3/output/` and checksum-verified |
 
-Allocate **100 GB of pod-local working disk backing `/workspace`** as a starting
-point (not a measured capacity guarantee; long/high-resolution renders need more).
-If `/workspace` is on the container disk, set the **container disk to 100 GB**.
-If it is a separate pod-local volume disk, size that disk to 100 GB instead.
-The old 5 GB container setting is only suitable when `/workspace` has its own
-sufficiently large working volume. Setup requires at least **40 GiB free after
-copying ComfyUI**, for a staged model download and rendering scratch. Before model
+Allocate **100 GB for the regional Network Volume** as a starting point (not a
+measured capacity guarantee; long/high-resolution renders need more). Keep the
+**container disk at 5 GB**. Setup refuses to install without a separate working
+volume and rejects object-backed or memory-backed working mounts. Mount metadata
+cannot verify RunPod's retention policy: choose a **Network Volume**, not a
+pod-local Volume disk, to retain the workspace after deleting the pod.
+Setup requires at least **40 GiB free after copying ComfyUI**, for a staged model
+download and rendering scratch. Before model
 downloads, setup also tests Global Volume creation, reading, overwriting, checksums,
 and access through a local model symlink.
 
@@ -100,12 +103,21 @@ tail before reporting that chunk complete; the final video is backed up before
 with an error, retaining local files for retry. Stop the pending queue after an
 error and restart from chunk 0 once storage is available again.
 
-**Replacement pod:** attach the same Global Volume and use the same template.
-Setup automatically restores verified render files to the new working disk.
+**Replacement pod:** attach the **same regional Network Volume and Global Volume**
+and use the same template. ComfyUI, its virtualenv, custom nodes, notebooks, settings,
+and render files remain on the Network Volume. Setup also restores any missing
+verified render backups from the Global Volume automatically.
 Open your saved workflow, set `chunk_index` to **0**, and queue again; completed
 chunks are skipped. A copy of the workflow used for a render is also saved at
 `output/h3_longform/<session>/workflow.json` when queued from the ComfyUI UI.
 Queue submission itself is manual; files are restored automatically.
+
+The regional workspace remains tied to its datacenter. Moving to another region
+requires a new regional Network Volume: global models, inputs, saved workflows and
+verified renders are reused/restored automatically, but arbitrary notebooks and
+custom environment changes are **not mirrored to Global Storage**. Transfer those
+separately if moving regions. Files or packages installed outside `/workspace`
+(including `/root` and system-wide installs) are still disposable.
 
 An abrupt termination can lose the currently rendering/uploading chunk. Completed,
 verified backups survive. Partial copies are ignored on restore. Keep the same
@@ -130,32 +142,50 @@ This implementation has Linux CI for transfer-failure, restore, symlink, workflo
 save, and render regression tests, but has **not yet been tested on a live RunPod
 Global Volume**. RunPod's beta
 is object-storage-backed and recommends regional storage for workloads needing
-full POSIX behavior or frequent/concurrent writes; rendering stays local for that
+full POSIX behavior or frequent/concurrent writes; rendering stays on the regional volume for that
 reason. Its cross-pod visibility is eventually consistent: stop writing on the old
 pod before moving, and wait for backups to become visible if a replacement cannot
 see them immediately. See [RunPod Global Volume limitations](https://docs.runpod.io/storage/globalvolume/overview)
 and [current mount-path behavior](https://docs.runpod.io/storage/globalvolume/globalvolume-pods#mount-paths).
+See also [storage lifecycles](https://docs.runpod.io/pods/storage/types): a Network
+Volume survives pod deletion, while a pod-local Volume disk does not.
 
 ## RunPod template settings
 
 | Setting | Value |
 |---|---|
 | Base image | `runpod/comfyui:1.4.0-rc.164-comfyuiv0.35.0-cuda12.8` (the same image as the LTX template) |
-| Container disk | **100 GB** for the Global Volume setup below |
-| Pod-local volume disk | **0 GB** for this setup; `/workspace` uses the container working disk |
-| Template volume mount path | `/workspace-global`; also verify the attached Global Volume's own mount field at deployment |
-| Global Volume | Attach at deployment; elastic capacity, no 64/80 GB size to enter |
+| Container disk | **5 GB**; disposable system files only |
+| Persistent storage | **Network storage**; each deployer selects their own volumes |
+| Template volume mount path | **`/workspace`** for the regional working volume |
+| Regional Network Volume | **100 GB recommended**, attached at deployment at `/workspace` |
+| Global Volume | Attached at deployment at **`/workspace-global`**; elastic capacity |
+| Pod-local volume disk | Not needed when a regional Network Volume is attached |
 | Ports | HTTP `8188` (ComfyUI), HTTP `8888` (JupyterLab) |
 | Env vars | `H3_GLOBAL_STORAGE=1`, `FILEBROWSER_PASSWORD` (your own password); `HF_TOKEN` optional |
 
-These values are for **one Global Volume plus the container disk**. You do not
-need a regional network volume. For the traditional regional layout instead, set
-`H3_GLOBAL_STORAGE=0`, mount the regional volume at `/workspace` with 64–80 GB, and
-use a 5 GB container disk.
+This is a **public template**: publish the image, start command, ports and environment
+defaults, not a volume belonging to the publisher. Each deployer attaches their own
+**regional Network Volume plus Global Volume**. The template's boot script cannot
+create or attach RunPod volumes. Once attached, setup and backups are automatic.
+
+Suggested public-template description:
+
+> MiniMax H3 long-form talking avatar with ComfyUI and JupyterLab. Requires a regional
+> Network Volume (100 GB recommended) at /workspace and a Global Volume at
+> /workspace-global. Keeps the working environment and notebooks persistent, with
+> automatic global model reuse and verified render backups.
+
+For the traditional regional-only layout, set `H3_GLOBAL_STORAGE=0` and attach a
+Network Volume at `/workspace` with 80 GB or more; a Global Volume is then optional.
 
 At deployment, select the template and GPU first, then **Storage → Persistent
-storage → + Add volume** and choose your Global Volume. Edit its mount to
-**`/workspace-global`** before deploying. Leave `/workspace` on the container disk.
+storage → + Add volume**. Add the Global Volume, leave its mount field untouched,
+then add the regional Network Volume. RunPod currently moves the Global Volume
+to `/workspace-global` and puts the Network Volume at `/workspace` automatically.
+**Verify both final paths before deploying.** If the Global mount field was edited
+first, RunPod may assign the Network Volume to `/workspace-2`; correct the Network
+Volume to `/workspace` and keep the Global Volume at `/workspace-global`.
 Start with a GPU with 80–96 GB VRAM for initial testing; actual H3 memory usage has
 not been benchmarked for this workflow.
 
@@ -171,6 +201,8 @@ FILEBROWSER_PASSWORD=<your-own-password>
 `JUPYTER_NO_AUTH=1` retains this template's existing no-login Jupyter behavior.
 For authenticated Jupyter, use `JUPYTER_NO_AUTH=0` and set `JUPYTER_PASSWORD`.
 Do not override `COMFYUI_PATH`: the base image starts ComfyUI at its fixed path.
+JupyterLab opens at `/workspace`. Save notebooks there to retain them across stops
+and replacement pods; its config/data directories are placed there automatically.
 
 > **The image needs ComfyUI ≥ 0.35.0.** `MiniMaxH3AddGuide`, the node that pins your
 > voiceover, doesn't exist before 0.34.0, and tags like `runpod/comfyui:cuda12.8` or

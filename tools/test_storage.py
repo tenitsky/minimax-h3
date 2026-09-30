@@ -186,6 +186,35 @@ class StorageTests(unittest.TestCase):
             storage.wait_for(lambda: next(attempts), "delayed file")
             self.assertEqual(sleep.call_count, 2)
 
+    def test_workspace_requires_its_own_mount(self):
+        # ismount() is mocked true by the fixture; it must not bypass mountinfo.
+        for mounts in ("1 0 0:1 / / rw - overlay overlay rw\n",
+                       "1 0 0:1 / / rw - ext4 /dev/root rw\n",
+                       f"2 1 0:2 / {self.newpod.as_posix()} rw - nfs4 server:/data rw\n"):
+            with self.subTest(mounts=mounts), patch.object(Path, "exists", return_value=True), patch.object(Path, "read_text", return_value=mounts):
+                with self.assertRaisesRegex(RuntimeError, "disposable container disk"):
+                    storage.require_workspace_volume(self.local)
+        with patch.object(Path, "exists", return_value=False):
+            with self.assertRaisesRegex(RuntimeError, "Cannot verify"):
+                storage.require_workspace_volume(self.local)
+
+    def test_workspace_rejects_ephemeral_and_object_mounts(self):
+        for kind in ("overlay", "tmpfs", "ramfs", "fuse.global", "s3fs"):
+            mounts = f"2 1 0:2 / {self.local.as_posix()} rw - {kind} volume rw\n"
+            with self.subTest(kind=kind), patch.object(Path, "exists", return_value=True), patch.object(Path, "read_text", return_value=mounts):
+                with self.assertRaisesRegex(RuntimeError, "persistent POSIX working volume"):
+                    storage.require_workspace_volume(self.local)
+
+    def test_workspace_accepts_network_and_bind_mounts(self):
+        for kind in ("nfs", "nfs4", "ext4", "xfs"):
+            # Bind mounts may share the parent device; the mountinfo entry still
+            # identifies the separate volume. Also exercise escaped mount paths.
+            workspace = self.local / "path with spaces"
+            target = workspace.as_posix().replace(" ", "\\040")
+            mounts = f"2 1 0:1 /volume/subdir {target} rw - {kind} volume rw\n"
+            with self.subTest(kind=kind), patch.object(Path, "exists", return_value=True), patch.object(Path, "read_text", return_value=mounts):
+                storage.require_workspace_volume(workspace)
+
     @unittest.skipUnless(importlib.util.find_spec("aiohttp"), "aiohttp required for middleware tests")
     def test_ui_save_backs_up_and_reports_backup_failure(self):
         from aiohttp import web

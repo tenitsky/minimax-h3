@@ -19,12 +19,38 @@ LOG = "[H3 Storage]"
 _workflow_lock = threading.Lock()
 
 
+def require_workspace_volume(workspace=Path("/workspace")):
+    """Require a separate, non-ephemeral working mount before installing anything.
+
+    Mount metadata cannot prove the provider's retention policy. Deployers must
+    attach a regional Network Volume to retain the workspace after Pod deletion.
+    Inspect mountinfo rather than ismount(), which can miss bind mounts.
+    """
+    workspace = Path(workspace).resolve()
+    mountinfo = Path("/proc/self/mountinfo")
+    instruction = "Attach a regional Network Volume at /workspace; mount the Global Volume separately at /workspace-global."
+    if not mountinfo.exists():
+        raise RuntimeError(f"Cannot verify the workspace mount. {instruction}")
+    kinds = []
+    for line in mountinfo.read_text().splitlines():
+        fields = line.split()
+        target = Path(fields[4].replace("\\040", " ").replace("\\134", "\\"))
+        if target == workspace:
+            kinds.append(fields[fields.index("-") + 1].lower())
+    if not kinds:
+        raise RuntimeError(f"No separate volume mounted at {workspace}; refusing to install on the disposable container disk. {instruction}")
+    if any(name in kind for kind in kinds for name in ("overlay", "tmpfs", "ramfs", "fuse", "s3fs", "gcs", "rclone")):
+        raise RuntimeError(f"Workspace mount uses {', '.join(kinds)}, not a persistent POSIX working volume. {instruction}")
+    check_working_path(workspace)
+    print(f"{LOG} separate working volume found at {workspace} ({kinds[-1]})")
+
+
 def check_working_path(path):
     """Reject object-backed scratch, including a Global Volume at /workspace."""
     path = Path(path).resolve()
     mount = Path(os.environ.get("H3_GLOBAL_MOUNT", "/workspace-global")).resolve()
     if path == mount or mount in path.parents:
-        raise RuntimeError(f"Working path {path} is on Global Storage. Mount the Global Volume at /workspace-global and keep /workspace local.")
+        raise RuntimeError(f"Working path {path} is on Global Storage. Mount the Global Volume at /workspace-global and a regional Network Volume at /workspace.")
     mountinfo = Path("/proc/self/mountinfo")
     if mountinfo.exists():
         matches = []
@@ -35,7 +61,7 @@ def check_working_path(path):
                 matches.append((len(str(target)), fields[fields.index("-") + 1]))
         kind = max(matches, default=(0, ""))[1].lower()
         if any(name in kind for name in ("fuse", "s3fs", "gcs", "rclone")):
-            raise RuntimeError(f"Working path {path} uses {kind}. Set the Global Volume mount to /workspace-global; /workspace must be a local or regional working disk.")
+            raise RuntimeError(f"Working path {path} uses {kind}. Set the Global Volume mount to /workspace-global; /workspace must be a persistent POSIX working volume.")
 
 
 def wait_for(check, description, attempts=5):
@@ -306,7 +332,7 @@ def configure(comfy_dir):
     # 40 GiB of free scratch covers one staged model download plus render space.
     required = float(os.environ.get("H3_LOCAL_MIN_FREE_GB", "40")) * 1024 ** 3
     if shutil.disk_usage(comfy).free < required:
-        raise RuntimeError("Not enough working disk space. Allocate a larger local disk (100 GB recommended).")
+        raise RuntimeError("Not enough working disk space. Allocate a larger Network Volume at /workspace (100 GB recommended).")
     probe(comfy)
     link_directory(comfy / "input", remote / "input")
     local_workflows(comfy)
@@ -347,6 +373,7 @@ def main():
     parser.add_argument("relative", nargs="?")
     args = parser.parse_args()
     if args.action == "preflight":
+        require_workspace_volume()
         check_working_path(args.path)
     elif args.action == "backup-workflows":
         backup_workflows(args.path)
