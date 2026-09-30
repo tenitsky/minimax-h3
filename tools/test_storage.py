@@ -105,7 +105,7 @@ class StorageTests(unittest.TestCase):
             return chmod(path, 0o644, follow_symlinks=follow_symlinks)
 
         with patch.object(Path, "chmod", nonexecutable_chmod):
-            with self.assertRaisesRegex(RuntimeError, "could not execute a workspace file.*0644"):
+            with self.assertRaisesRegex(RuntimeError, "could not execute a workspace file.*0o644"):
                 storage.probe_working_volume(self.local)
         self.assertEqual(list(self.local.iterdir()), [preserved])
         self.assertEqual(preserved.read_bytes(), b"existing user file")
