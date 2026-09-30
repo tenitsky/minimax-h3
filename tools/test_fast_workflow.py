@@ -201,11 +201,13 @@ class FastWorkflowTests(unittest.TestCase):
         self.assert_source(writer, "trim_start", split, "carry_frames")
         self.assert_source(writer, "keep_frames", split, "keep_frames")
         self.assert_source(writer, "total_chunks", split, "total_chunks")
-        index, _ = self.source(split, "chunk_index")
-        self.assertEqual(index["widgets_values"], [0, "increment"])
-        self.assert_source(carry, "chunk_index", index, "INT")
-        self.assert_source(writer, "chunk_index", index, "INT")
-        self.assertEqual(split["widgets_values"][-1], "off")
+        # The chunk to render comes from the files on disk, not a browser counter.
+        self.assertFalse(any(i["name"] == "chunk_index" for i in split["inputs"]))
+        self.assertEqual(split["widgets_values"][6:], ["off", True])
+        self.assert_source(carry, "chunk_index", split, "chunk_index")
+        self.assert_source(writer, "chunk_index", split, "chunk_index")
+        self.assertFalse(any(n["type"] == "PrimitiveInt" and n["outputs"][0]["links"]
+                             and "chunk" in n.get("title", "") for n in self.nodes.values()))
 
     def test_square_defaults_and_fast_names_keep_sessions_separate(self):
         crop = self.node("ImageScale")

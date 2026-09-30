@@ -153,6 +153,7 @@ class LongformTests(unittest.TestCase):
             (52, "vae"): (43, 0), (53, "carry_frames"): (20, 7),
             (70, "trim_start"): (20, 7), (70, "chunk_audio"): (20, 0),
             (70, "original_audio"): (11, 0), (51, "prompt"): (30, 0),
+            (53, "chunk_index"): (20, 8), (70, "chunk_index"): (20, 8),
             (30, "length"): (20, 1), (30, "carry_frames"): (20, 7),
         }.items():
             self.assertEqual(links[dest], source)
@@ -167,7 +168,7 @@ class LongformTests(unittest.TestCase):
                 self.assertIn(inp["name"], inputs)
             widgets = [v for v in inputs.values() if isinstance(v[0], list) or v[0] in ("INT", "FLOAT", "BOOLEAN", "STRING")]
             self.assertEqual(len(widgets), len(node["widgets_values"]))
-        self.assertEqual(nodes[20]["widgets_values"][-1], "off")
+        self.assertEqual(nodes[20]["widgets_values"][6:], ["off", True])
 
     def probe(self, path, *args):
         return json.loads(subprocess.check_output([
@@ -187,7 +188,8 @@ class LongformTests(unittest.TestCase):
                 offset, index, pieces = 0, 0, []
                 while True:
                     result = split.split(audio, index, 12, 5, 15, motion_carry=mode, prompt=prompt)
-                    chunk, length, keep, count, last, alignment, guide, lead = result
+                    chunk, length, keep, count, last, alignment, guide, lead, resolved = result
+                    self.assertEqual(resolved, index)
                     self.assertEqual(lead, carry if index else 0)
                     start_sample = round(offset * sr / 24)
                     end_sample = min(sr * seconds, round((offset + keep) * sr / 24))
@@ -241,6 +243,44 @@ class LongformTests(unittest.TestCase):
                     self.assertIsInstance(split.split(audio, 0, 12, 5, 15, motion_carry=mode, prompt=prompt)[0], dict)
                     with self.assertRaisesRegex(RuntimeError, "Queue chunks in order"):
                         opening.pick(portrait, 1, carry, prompt)
+
+    @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"), "ffmpeg and ffprobe required")
+    def test_auto_chunk_follows_disk_not_the_queue_counter(self):
+        # The browser counter is far past any chunk count after a big batch; with
+        # auto_chunk each item must still render the current video's next chunk.
+        sr, seconds = 24000, 21
+        audio = {"waveform": torch.linspace(-0.5, 0.5, sr * seconds).reshape(1, 1, -1), "sample_rate": sr}
+        split, writer = h3.H3LongformSplit(), h3.H3LongformWrite()
+        counter = 2000
+
+        def item(session):
+            nonlocal counter
+            counter += 1
+            result = split.split(audio, counter, 8, 5, 10, auto_chunk=True, prompt=self.prompt("off", session))
+            if isinstance(result[0], ExecutionBlocker):
+                return None
+            chunk, length, keep, count, last, _, _, _, index = result
+            images = torch.zeros((length, 16, 16, 3))
+            writer.write(images, audio, index, count, keep, session, session + ".mp4", chunk, False, 0,
+                         self.prompt("off", session))
+            return index, count
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            done = [item("video1")]
+            while done[-1][0] < done[-1][1] - 1:
+                done.append(item("video1"))
+            count = done[0][1]
+            self.assertGreater(count, 1)
+            self.assertEqual([i for i, _ in done], list(range(count)))
+            self.assertTrue((Path(self.tmp.name) / "video1.mp4").exists())
+            self.assertIsNone(item("video1"), "a finished video is skipped, not re-rendered")
+            # A new voiceover starts at its own chunk 0, whatever the counter says.
+            self.assertEqual(item("video2")[0], 0)
+            # Redoing one chunk of a finished video re-renders it, then re-stitches.
+            (Path(h3._session_dir("video1")) / "chunk_0000.mp4").unlink()
+            self.assertEqual(item("video1")[0], 0)
+            self.assertEqual(item("video1")[0], count - 1)
+            self.assertIsNone(item("video1"))
 
     def test_resume_cache_is_invalidated(self):
         # ComfyUI evaluates IS_CHANGED with the hidden prompt set to {} and linked
@@ -301,7 +341,7 @@ class LongformTests(unittest.TestCase):
             active = load("h3_network", ROOT / "custom_nodes/comfyui-h3-longform/__init__.py")
             index = 0
             while True:
-                chunk, length, keep, count, last, _, _, lead = active.H3LongformSplit().split(
+                chunk, length, keep, count, last, _, _, lead, _ = active.H3LongformSplit().split(
                     audio, index, 5, 5, 5, prompt=prompt, motion_carry="5 frames (~0.2s)")
                 images = torch.zeros((length, 16, 16, 3))
                 active.H3LongformWrite().write(images, audio, index, count, keep, "test", "final.mp4",

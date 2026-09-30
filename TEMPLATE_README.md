@@ -26,9 +26,9 @@ Jupyter has no login by default. Anyone with its accessible URL can run commands
 3. Load your portrait and voiceover.
 4. In **Talking-Head Prompt**, describe the person and background seen in the portrait. This keeps the background steady.
 5. Test one chunk at batch count 1.
-6. Reset chunk_index to 0, then queue roughly audio seconds divided by 8, plus a margin.
+6. Queue roughly audio seconds divided by 8, plus a margin. Each item renders the next unfinished chunk.
 
-The last chunk stitches the final video into ComfyUI/output. To resume, keep the same settings, reset chunk_index to 0 and queue again. Motion carry: **5 or 22 frames**, default off.
+The last chunk stitches the final video into ComfyUI/output. For the next video, load its voiceover and queue: it starts at chunk 1. To resume, queue again. Motion carry: **5 or 22 frames**, default off.
 
 ## Hardware and licence
 

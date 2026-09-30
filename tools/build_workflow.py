@@ -45,9 +45,11 @@ PROMPT_FIELDS = [
     "blouse stay neatly in place.",
 ]
 # Split: chunk_index, target_seconds, min_seconds, max_seconds, cut_mode,
-# skip_existing, motion_carry. Every frame between a chunk's two pinned portraits is
+# skip_existing, motion_carry, auto_chunk. auto_chunk picks the first unfinished
+# chunk from the files on disk, so there is no counter to reset between videos.
+# Every frame between a chunk's two pinned portraits is
 # invented, so drift grows with chunk length: 10s rather than H3's 15s ceiling.
-SPLIT_WIDGETS = [0, 8.0, 5.0, 10.0, "pause", True, "off"]
+SPLIT_WIDGETS = [0, 8.0, 5.0, 10.0, "pause", True, "off", True]
 # Model Sparse Attention (Sol-Attn): method, tau, start_percent, end_percent,
 # dense_blocks, min_tokens, extra_tokens, sink_conditioning, verbose.
 # exact_kv_and_rows keeps the text, pinned portraits and voiceover rows exact for
@@ -136,10 +138,10 @@ Drop files in `ComfyUI/input/`, or upload them through the nodes.
 ## Running a long render
 
 1. Test one chunk (batch count 1) and check `output/h3_longform/<audio name>/chunk_0000.mp4`.
-2. Set `chunk_index` back to **0** and queue with a **batch count of at least audio seconds / 8**, plus a margin. Surplus items are skipped in milliseconds.
+2. Queue again with a **batch count of at least audio seconds / 8**, plus a margin. Each item renders the next unfinished chunk; surplus items are skipped in milliseconds.
 3. The last chunk stitches everything into `output/<audio name>.mp4` and clears the queue.
 
-Interrupted? Set `chunk_index` back to 0 and queue again: finished chunks are skipped."""
+**New video:** just load the new voiceover and queue - it starts at chunk 1 in its own folder. Interrupted? Queue again: finished chunks are skipped. To redo a finished video, change `name_suffix` or delete its folder."""
 
 NOTE_FAST = """# MiniMax H3 Fast
 
@@ -147,7 +149,7 @@ Dedicated **4-step 768p Turbo** LoRA (video/audio shift 6/3), INT8 attention and
 
 1. Upload **Portrait** and **Voiceover**.
 2. In **Talking-Head Prompt**, describe the `subject` and `background` you see in the portrait. This is what keeps the background from changing. The fields come filled in for an example portrait; rewrite them for yours and keep the leading `subject:` / `background:` tags (optional, stripped).
-3. Test one chunk (batch count 1). Then set chunk_index to **0** and queue audio seconds / 8, plus a margin. The final chunk stitches `output/<audio name>_fast.mp4`.
+3. Test one chunk (batch count 1), then queue audio seconds / 8, plus a margin. Each item renders the next unfinished chunk; the last one stitches `output/<audio name>_fast.mp4`. A new voiceover starts at chunk 1 in its own folder - nothing to reset.
 
 Change `name_suffix` on the output-name node to start a fresh take when changing inputs or settings.
 
@@ -162,7 +164,7 @@ NOTE_DRAFT = """# MiniMax H3 Fast Draft
 
 1. Upload **Portrait** and **Voiceover**.
 2. In **Talking-Head Prompt**, describe the `subject` and `background` you see in the portrait. The fields come filled in for an example portrait; rewrite them for yours and keep the leading `subject:` / `background:` tags (optional, stripped).
-3. Test one chunk (batch count 1). Then set chunk_index to **0** and queue audio seconds / 8, plus a margin. The final chunk stitches `output/<audio name>_draft.mp4`.
+3. Test one chunk (batch count 1), then queue audio seconds / 8, plus a margin. Each item renders the next unfinished chunk; the last one stitches `output/<audio name>_draft.mp4`. A new voiceover starts at chunk 1 in its own folder - nothing to reset.
 
 The LoRA filename says 8step; four-step inference is intentional and supported by its authors.
 
@@ -279,9 +281,6 @@ def build(variant="standard"):
     g.node(11, "LoadAudio", (-1000, 460), (400, 140),
            outputs=[("AUDIO", "AUDIO")], widgets=["voiceover.mp3", None, None],
            title="Load Voiceover", color=INPUT)
-    g.node(12, "PrimitiveInt", (-1000, 640), (400, 90),
-           outputs=[("INT", "INT")], widgets=[0, "increment"],
-           title="chunk_index (set to increment)", color=INPUT)
     g.node(13, "PrimitiveInt", (-1000, 770), (190, 90),
            outputs=[("INT", "INT")], widgets=[side, "fixed"], title="Width")
     g.node(14, "PrimitiveInt", (-790, 770), (190, 90),
@@ -289,11 +288,11 @@ def build(variant="standard"):
 
     # ---------------------------------------------------------------- longform plan
     g.node(20, "H3LongformSplit", (-500, 500), (400, 300),
-           inputs=[("audio", "AUDIO", I, False), ("chunk_index", "INT", W, False)],
+           inputs=[("audio", "AUDIO", I, False)],
            outputs=[("audio_chunk", "AUDIO"), ("length", "INT"), ("keep_frames", "INT"),
                     ("total_chunks", "INT"), ("is_last", "BOOLEAN"),
                     ("alignment", "STRING"), ("guide_audio", "AUDIO"),
-                    ("carry_frames", "INT")],
+                    ("carry_frames", "INT"), ("chunk_index", "INT")],
            widgets=list(SPLIT_WIDGETS),
            title="1. Split Audio Chunk (H3 frame grid)", cnr="comfyui-h3-longform")
     g.node(21, "H3LongformAudioName", (-500, 810), (400, 110),
@@ -431,7 +430,6 @@ def build(variant="standard"):
     # ---------------------------------------------------------------- wiring
     L = g.link
     L(11, 0, 20, "audio")
-    L(12, 0, 20, "chunk_index")
     L(20, 1, 30, "length")
     L(20, 7, 30, "carry_frames")
 
@@ -458,7 +456,7 @@ def build(variant="standard"):
     L(42, 0, 51, "clip")
     L(43, 0, 51, "vae")
     L(50, 0, 53, "portrait")
-    L(12, 0, 53, "chunk_index")
+    L(20, 8, 53, "chunk_index")
     L(20, 7, 53, "carry_frames")
     L(53, 0, 51, "first_frame")
     L(50, 0, 51, "last_frame")
@@ -490,7 +488,7 @@ def build(variant="standard"):
     L(65, 0, 70, "images")
     L(11, 0, 70, "original_audio")
     L(20, 0, 70, "chunk_audio")
-    L(12, 0, 70, "chunk_index")
+    L(20, 8, 70, "chunk_index")
     L(20, 3, 70, "total_chunks")
     L(20, 2, 70, "keep_frames")
     L(20, 7, 70, "trim_start")
@@ -522,7 +520,7 @@ def compact(wf):
     nodes = {n["id"]: n for n in wf["nodes"]}
     layout = {
         1: ((0, 0), (360, 640)), 10: ((400, 0), (330, 360)),
-        11: ((400, 390), (330, 140)), 12: ((400, 560), (330, 90)),
+        11: ((400, 390), (330, 140)),
         30: ((770, 0), (420, 360)), 20: ((770, 395), (420, 290)),
         13: ((1230, 0), (190, 90)), 14: ((1440, 0), (190, 90)),
         21: ((1230, 130), (400, 130)), 70: ((1230, 300), (400, 340)),

@@ -62,22 +62,30 @@ different inputs or settings. Existing workflows default to an empty suffix.
 
 ## Running
 
-1. Leave `chunk_index` on **increment**, starting at 0.
+1. Turn Split's `auto_chunk` on (the bundled workflows do) and wire its
+   `chunk_index` **output** to Carry and Write. Each queue item then renders the
+   session's first unfinished chunk, found on disk. A browser-side counter keeps
+   climbing through surplus items and never learns that a render finished, so a
+   new voiceover would otherwise start at chunk 2001.
 2. Queue with a batch count **at least** `total_chunks`. Surplus items are blocked
    and cost milliseconds.
 3. The last chunk stitches everything and, with `stop_when_done` on, clears the
    pending queue. Note that this clears **all** pending items, not just this render's.
 
-**Resume:** set `chunk_index` to 0 and queue again. With `skip_existing` on, finished
-chunks are skipped if their carry files also exist when carry is enabled. Missing
-tails cause those chunks to render again. The final chunk always re-renders, because
-it's what triggers the stitch. Tails are retained after stitching for retries.
+**Resume:** queue again. A chunk counts as finished when its mp4 exists and, with
+carry, so does its tail; missing tails cause those chunks to render again. The final
+chunk is redone until a stitch succeeds, which writes a `.finished` marker. After
+that the session is skipped; writing any chunk again removes the marker, so the
+next item re-stitches. Tails are retained after stitching for retries.
+
+With `auto_chunk` off (graphs made before it existed), set `chunk_index` to
+increment, and back to 0 before each render or resume.
 
 **Changing settings:** use a fresh session when changing carry mode, chunk settings,
 audio, portrait, or resolution. Unlink Write's session input to type a new name.
 Resume checks file presence, not whether the settings match the earlier render.
 
-**Several pods, one render (carry off only):** chunks are independent, since every
+**Several pods, one render (carry off only, `auto_chunk` off):** chunks are independent, since every
 chunk starts and ends on the portrait. Pods sharing a network volume can take a range of indices
 in the same session. A chunk counts as done when its mp4 exists, and each is written
 under a temp name and then renamed. Run the last chunk once all the others are on

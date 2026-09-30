@@ -363,6 +363,27 @@ def _session_from_prompt(prompt, default="run1"):
     return default
 
 
+FINISHED = ".finished"          # written by Write once the stitch succeeds
+
+
+def next_chunk(session, count, carry):
+    """First chunk of a session that still needs rendering, or None when finished.
+
+    A chunk is done when its mp4 exists and, with motion carry, the tail the next
+    chunk opens on exists too. The last chunk is redone until a stitch has
+    succeeded, so an interrupted stitch is retried rather than skipped.
+    """
+    sdir = _session_dir(session)
+    for i in range(count):
+        if not os.path.exists(os.path.join(sdir, f"chunk_{i:04d}.mp4")):
+            return i
+        if carry and i < count - 1 and _read_tail(session, i, carry) is None:
+            return i
+    if os.path.exists(os.path.join(sdir, FINISHED)):
+        return None
+    return count - 1
+
+
 def _tail_path(session, chunk_index):
     """Last written frames of a chunk, kept for the next chunk's lead-in."""
     return os.path.join(_session_dir(session), ".carry", f"tail_{chunk_index:04d}.npz")
@@ -415,8 +436,9 @@ class H3LongformSplit:
             "required": {
                 "audio": ("AUDIO",),
                 "chunk_index": ("INT", {"default": 0, "min": 0, "max": 100000,
-                                        "tooltip": "Set this to increment, then queue "
-                                                   "with a batch count of at least "
+                                        "tooltip": "Only used with auto_chunk off: set "
+                                                   "it to increment, then queue with a "
+                                                   "batch count of at least "
                                                    "total_chunks."}),
                 "target_seconds": ("FLOAT", {"default": 12.0, "min": 5.0, "max": 15.0,
                                              "step": 0.5,
@@ -451,12 +473,24 @@ class H3LongformSplit:
                                "resets every chunk. Change it only between renders - "
                                "it changes where every chunk starts."}),
             },
+            "optional": {
+                # Optional and off by default, so graphs saved before it existed keep
+                # their incrementing chunk_index wiring.
+                "auto_chunk": ("BOOLEAN", {
+                    "default": False,
+                    "tooltip": "On: each queue item renders this voiceover's first "
+                               "unfinished chunk, found on disk, and chunk_index is "
+                               "ignored. A new voiceover starts at chunk 1 with no "
+                               "counter to reset. Wire the chunk_index output to "
+                               "Carry and Write."}),
+            },
             "hidden": {"prompt": "PROMPT"},
         }
 
-    RETURN_TYPES = ("AUDIO", "INT", "INT", "INT", "BOOLEAN", "STRING", "AUDIO", "INT")
+    RETURN_TYPES = ("AUDIO", "INT", "INT", "INT", "BOOLEAN", "STRING", "AUDIO", "INT",
+                    "INT")
     RETURN_NAMES = ("audio_chunk", "length", "keep_frames", "total_chunks", "is_last",
-                    "alignment", "guide_audio", "carry_frames")
+                    "alignment", "guide_audio", "carry_frames", "chunk_index")
     FUNCTION = "split"
     CATEGORY = "H3 Longform"
 
@@ -467,7 +501,8 @@ class H3LongformSplit:
         return float("nan")
 
     def split(self, audio, chunk_index, target_seconds, min_seconds, max_seconds,
-              cut_mode="pause", skip_existing=True, motion_carry="off", prompt=None):
+              cut_mode="pause", skip_existing=True, motion_carry="off", auto_chunk=False,
+              prompt=None):
         if min_seconds > max_seconds:
             min_seconds, max_seconds = max_seconds, min_seconds
         carry_setting = CARRY_OPTIONS.get(motion_carry, 0)
@@ -480,17 +515,31 @@ class H3LongformSplit:
         pauses = []
         if cut_mode != "fixed":
             pauses = [(a * FPS, b * FPS) for a, b in find_pauses(_mono(wav), sr)]
-        if chunk_index == 0:
-            # Pause detection is thresholded against the track's peak, so music or
-            # room tone under the voice can leave it finding nothing.
-            print(f"{LOG} cut_mode={cut_mode}, motion_carry={carry_setting}, "
-                  f"pauses found: {len(pauses)}")
         spans = plan_chunks(total, target, keeps, pauses, cut_mode, keeps_first)
         if not spans:
             raise RuntimeError("Audio too short to split into chunks.")
 
         blocked = tuple(ExecutionBlocker(None) for _ in self.RETURN_TYPES) \
             if ExecutionBlocker is not None else None
+        if auto_chunk:
+            # The browser-side counter keeps climbing through surplus queue items and
+            # never learns that a render finished; the files on disk do.
+            session = _session_from_prompt(prompt)
+            pick = next_chunk(session, len(spans), carry_setting)
+            if pick is None:
+                print(f"{LOG} '{session}' is finished ({len(spans)} chunks) - skipping. "
+                      f"Change name_suffix, or delete output/{SESSION_ROOT}/{session}/, "
+                      f"to render it again.")
+                if blocked:
+                    return blocked
+                raise RuntimeError(f"'{session}' is already finished.")
+            chunk_index = pick
+            skip_existing = False   # next_chunk already skipped finished chunks
+        if chunk_index == 0:
+            # Pause detection is thresholded against the track's peak, so music or
+            # room tone under the voice can leave it finding nothing.
+            print(f"{LOG} cut_mode={cut_mode}, motion_carry={carry_setting}, "
+                  f"pauses found: {len(pauses)}")
         if chunk_index >= len(spans):
             # Past the end: blocking makes a generous batch count safe.
             if blocked:
@@ -536,7 +585,7 @@ class H3LongformSplit:
               f"+{keep / FPS:.2f}s  (generate {length} = lead-in {carry} + keep "
               f"{keep} + tail; track {total / FPS:.1f}s)")
         return (chunk_audio, length, keep, len(spans), is_last, alignment,
-                guide, carry)
+                guide, carry, idx)
 
 
 class H3LongformCarry:
@@ -640,6 +689,10 @@ class H3LongformWrite:
               prompt=None, extra_pnginfo=None):
         ff = _ffmpeg()
         sdir = _session_dir(session)
+        # Any chunk written makes the stitched video out of date until it is redone.
+        finished = os.path.join(sdir, FINISHED)
+        if os.path.exists(finished):
+            os.remove(finished)
 
         # Drop the lead-in (motion carry), then the pinned final frame (non-final
         # chunks) or the overshoot past the track's end (final chunk). Either way the
@@ -748,6 +801,8 @@ class H3LongformWrite:
         # Keep tails for a resumed render or a retry of the final chunk. Removing
         # them here would make the next run skip chunks whose lead-ins are missing.
 
+        with open(finished, "w", encoding="utf-8") as stream:
+            stream.write(out + "\n")
         msg = f"FINISHED: {out}"
         print(f"{LOG} {msg}")
 

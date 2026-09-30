@@ -107,7 +107,7 @@ when its pod is deleted. See [RunPod storage types](https://docs.runpod.io/pods/
 **Restart or replacement pod:** attach the same Network Volume at `/workspace` and
 use this template. The installed environment, models, notebooks and render files
 remain there. Existing complete models and edited workflows are reused. Open your
-workflow, set `chunk_index` to **0**, and queue again to skip completed chunks.
+workflow and queue again: completed chunks are skipped.
 The currently rendering chunk may need to be rendered again after an interruption.
 
 The Network Volume is tied to its datacenter. Keep it attached when choosing a GPU
@@ -244,13 +244,16 @@ filesystem or run H3 generation on a GPU.
    objects or logos appearing.
 4. **Test one chunk first:** use batch count 1 and check lip sync, identity and
    background in `output/h3_longform/<name>/chunk_0000.mp4`.
-5. Set `chunk_index` back to 0, then queue with a batch count of **at least the number
-   of chunks**, roughly audio seconds ÷ 8, plus margin. Surplus items are skipped in
-   milliseconds.
+5. Queue again with a batch count of **at least the number of chunks**, roughly
+   audio seconds ÷ 8, plus margin. Each queue item renders the next unfinished chunk,
+   found from the files on disk; surplus items are skipped in milliseconds.
 6. The last chunk writes `output/<audio name>.mp4` and clears the queue.
 
-**Resume** after an interruption: set `chunk_index` to 0 and queue again. Finished
-chunks are skipped.
+**Next video:** load the new voiceover and queue. It starts at chunk 1 in its own
+folder; there is no counter to reset. **Resume** after an interruption: queue again,
+and finished chunks are skipped. A finished video is skipped too: to render it
+again, change `name_suffix` on the output-name node or delete its folder under
+`output/h3_longform/`.
 
 ComfyUI's own examples are under **Workflow → Browse Templates → Video → MiniMax H3**
 (T2V, I2V, R2V, Multiframe, ControlNet). I2V works with the default downloads. R2V
