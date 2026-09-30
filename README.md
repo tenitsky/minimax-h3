@@ -165,13 +165,26 @@ Do not override `COMFYUI_PATH`: the image starts ComfyUI at its fixed path.
 > can reinstall torch and break the CUDA build.
 
 **Container start command.** Paste this JSON into RunPod's container start command
-field (also provided as [`runpod-start.json`](runpod-start.json)). It retries the
-clone without overwriting RunPod's DNS configuration:
+field (also provided as [`runpod-start.json`](runpod-start.json); readable source:
+[`bootstrap.sh`](bootstrap.sh)). It checks DNS for GitHub and Hugging Face first.
+Working DNS is left unchanged. If two checks fail, it saves the original
+`/etc/resolv.conf` under `/tmp/minimax-h3-dns.*`, then tries public resolvers
+`1.1.1.1` and `8.8.8.8`. If resolution still fails, it attempts to restore the
+original file and stops with a networking error. A successful fallback remains
+active for setup and model downloads. Git clone failures are retried up to 10 times.
+
+**Existing templates need this updated start command pasted into RunPod.** A GitHub
+push alone cannot fix DNS failure before the repository has been downloaded:
 
 ```json
 {
-  "entrypoint": ["bash", "-lc"],
-  "cmd": ["set -e; for attempt in 1 2 3 4 5 6 7 8 9 10; do repo=$(mktemp -d /tmp/minimax-h3.XXXXXX); if git clone --depth 1 https://github.com/tenitsky/minimax-h3.git \"$repo\"; then exec bash \"$repo/setup.sh\"; fi; sleep 5; done; echo 'FATAL: unable to clone minimax-h3 after 10 attempts' >&2; exit 1"]
+  "entrypoint": [
+    "bash",
+    "-lc"
+  ],
+  "cmd": [
+    "set -e\ndns_ok() {\n  timeout 10 getent ahostsv4 github.com >/dev/null 2>&1 &&\n  timeout 10 getent ahostsv4 huggingface.co >/dev/null 2>&1\n}\nif ! dns_ok; then\n  echo 'DNS lookup failed; retrying in 3 seconds...'\n  sleep 3\n  if ! dns_ok; then\n    dns_backup=$(mktemp /tmp/minimax-h3-dns.XXXXXX)\n    cp /etc/resolv.conf \"$dns_backup\"\n    echo \"Trying public DNS; original resolver saved at $dns_backup\"\n    if { printf 'nameserver 1.1.1.1\\nnameserver 8.8.8.8\\noptions timeout:2 attempts:2\\n'; } > /etc/resolv.conf && dns_ok; then\n      echo 'DNS recovered; continuing setup.'\n    else\n      cat \"$dns_backup\" > /etc/resolv.conf || true\n      echo 'FATAL: DNS still unavailable or resolver is read-only. Check RunPod networking or deploy on another host with the same Network Volume.' >&2\n      exit 1\n    fi\n  fi\nfi\nfor attempt in 1 2 3 4 5 6 7 8 9 10; do\n  repo=$(mktemp -d /tmp/minimax-h3.XXXXXX)\n  if git clone --depth 1 https://github.com/tenitsky/minimax-h3.git \"$repo\"; then\n    exec bash \"$repo/setup.sh\"\n  fi\n  sleep 5\ndone\necho 'FATAL: unable to clone minimax-h3 after 10 attempts' >&2\nexit 1\n"
+  ]
 }
 ```
 

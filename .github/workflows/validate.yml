@@ -23,6 +23,7 @@ jobs:
       - name: Check shell and Python syntax
         run: |
           bash -n setup.sh
+          bash -n bootstrap.sh
           python -m compileall -q custom_nodes tools
       - name: Storage and download regression tests
         run: |

@@ -63,7 +63,7 @@ test -e "$DEST.hf.part"
         config = json.loads(command_file)
         self.assertIn(command_file.strip(), (ROOT / "README.md").read_text(encoding="utf-8"))
         self.assertEqual(config["entrypoint"], ["bash", "-lc"])
-        self.assertNotIn("resolv.conf", config["cmd"][0])
+        self.assertEqual(config["cmd"][0], (ROOT / "bootstrap.sh").read_text(encoding="utf-8"))
         script = self.directory / "bootstrap.sh"
         script.write_text(config["cmd"][0], encoding="utf-8")
         subprocess.run([BASH, "-n", str(script)], check=True)
@@ -82,6 +82,90 @@ download_local() {
 download_h3 diffusion_models/test.safetensors
 file_ok "$COMFYUI_PATH/models/diffusion_models/test.safetensors"
 ''')
+
+
+@unittest.skipUnless(BASH and Path(BASH).exists(), "Bash required")
+class BootstrapTests(unittest.TestCase):
+    def run_bootstrap(self, mode):
+        with tempfile.TemporaryDirectory(prefix="h3-bootstrap-") as directory:
+            base = Path(directory)
+            resolver = base / "resolv.conf"
+            original = "nameserver 10.0.0.2\nsearch private.example\n"
+            resolver.write_text(original, encoding="utf-8", newline="\n")
+            fixture = base / "fixture-setup.sh"
+            fixture.write_text('printf ready > "$BOOT_READY"\n', encoding="utf-8", newline="\n")
+            env = {"DNS_MODE": mode, "RESOLVER": resolver.as_posix(),
+                   "DNS_COUNT": (base / "dns-count").as_posix(),
+                   "GIT_COUNT": (base / "git-count").as_posix(),
+                   "BOOT_READY": (base / "ready").as_posix(),
+                   "FIXTURE_SETUP": fixture.as_posix()}
+            preamble = "\n".join("export " + key + "=" + shlex.quote(value) for key, value in env.items()) + "\n"
+            preamble += '''
+timeout() { shift; "$@"; }
+sleep() { :; }
+getent() {
+  printf 'lookup\\n' >> "$DNS_COUNT"
+  case "$DNS_MODE" in
+    healthy|clone_failure) return 0 ;;
+    delayed) test "$(wc -l < "$DNS_COUNT")" -gt 1 ;;
+    recover) grep -q 'nameserver 1.1.1.1' "$RESOLVER" ;;
+    failed) return 1 ;;
+  esac
+}
+git() {
+  printf 'clone\\n' >> "$GIT_COUNT"
+  [ "$DNS_MODE" != clone_failure ] || return 1
+  cp "$FIXTURE_SETUP" "${@: -1}/setup.sh"
+}
+'''
+            # Run the shipped command, redirecting only filesystem paths into the
+            # fixture. Resolver, timeout, sleep and Git results are simulated.
+            command = json.loads((ROOT / "runpod-start.json").read_text(encoding="utf-8"))["cmd"][0]
+            command = command.replace("/etc/resolv.conf", shlex.quote(resolver.as_posix()))
+            command = command.replace("/tmp/minimax-h3-dns.XXXXXX", shlex.quote((base / "dns-backup.XXXXXX").as_posix()))
+            command = command.replace("/tmp/minimax-h3.XXXXXX", shlex.quote((base / "repo.XXXXXX").as_posix()))
+            script = base / "bootstrap-test.sh"
+            script.write_text(preamble + command, encoding="utf-8", newline="\n")
+            result = subprocess.run([BASH, str(script)], text=True, capture_output=True, timeout=15)
+            backups = [path.read_text() for path in base.glob("dns-backup.*")]
+            clones = (base / "git-count").read_text().splitlines() if (base / "git-count").exists() else []
+            return result, resolver.read_text(), original, backups, len(clones), (base / "ready").exists()
+
+    def test_healthy_and_transient_dns_preserve_original_resolver(self):
+        for mode in ("healthy", "delayed"):
+            with self.subTest(mode=mode):
+                result, resolver, original, backups, clones, ready = self.run_bootstrap(mode)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(resolver, original)
+                self.assertEqual(backups, [])
+                self.assertEqual(clones, 1)
+                self.assertTrue(ready)
+
+    def test_broken_dns_recovers_before_setup(self):
+        result, resolver, original, backups, clones, ready = self.run_bootstrap("recover")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("nameserver 1.1.1.1", resolver)
+        self.assertEqual(backups, [original])
+        self.assertEqual(clones, 1)
+        self.assertTrue(ready)
+
+    def test_failed_dns_restores_original_and_never_starts_setup(self):
+        result, resolver, original, backups, clones, ready = self.run_bootstrap("failed")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("FATAL: DNS still unavailable", result.stderr)
+        self.assertEqual(resolver, original)
+        self.assertEqual(backups, [original])
+        self.assertEqual(clones, 0)
+        self.assertFalse(ready)
+
+    def test_clone_failure_retries_without_changing_working_dns(self):
+        result, resolver, original, backups, clones, ready = self.run_bootstrap("clone_failure")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("unable to clone minimax-h3 after 10 attempts", result.stderr)
+        self.assertEqual(resolver, original)
+        self.assertEqual(backups, [])
+        self.assertEqual(clones, 10)
+        self.assertFalse(ready)
 
 
 if __name__ == "__main__":
