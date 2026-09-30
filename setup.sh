@@ -3,6 +3,7 @@ set -e
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "=== Starting MiniMax H3 Template Setup ==="
+echo "Template revision: $(git -C "$SCRIPT_DIR" rev-parse --short HEAD 2>/dev/null || printf unknown)"
 echo "LICENCE: MiniMax H3 open weights are NOT licensed for use in the US, EU, UK or"
 echo "South Korea (MiniMax H3 Community License). See README.md before using this pod."
 
@@ -31,10 +32,16 @@ if [ "${JUPYTER_NO_AUTH:-1}" = "1" ]; then
 fi
 
 echo "=== Ensuring System Dependencies are Installed ==="
-apt-get update
-apt-get install -y wget ca-certificates util-linux
-# ffmpeg does the per-chunk encoding and the final stitch.
-command -v ffmpeg >/dev/null || apt-get install -y ffmpeg
+# The image already supplies these. Contact apt mirrors only if something is
+# actually missing; an unrelated mirror outage must not break a complete image.
+packages=()
+command -v wget >/dev/null || packages+=(wget)
+command -v ffmpeg >/dev/null || packages+=(ffmpeg)
+[ -s /etc/ssl/certs/ca-certificates.crt ] || packages+=(ca-certificates)
+if [ "${#packages[@]}" -gt 0 ]; then
+  apt-get update
+  apt-get install -y --no-install-recommends "${packages[@]}"
+fi
 
 # Jupyter serves /workspace in the base image. Keep its settings and user data on
 # that persistent volume too; /root belongs to the disposable container disk.
@@ -42,6 +49,26 @@ export JUPYTER_CONFIG_DIR=/workspace/.jupyter
 export JUPYTER_DATA_DIR=/workspace/.local/share/jupyter
 export IPYTHONDIR=/workspace/.ipython
 mkdir -p "$JUPYTER_CONFIG_DIR" "$JUPYTER_DATA_DIR" "$IPYTHONDIR"
+
+# Network Volumes can expose fixed permissions. Jupyter's cookie secrets and
+# kernel connection files require private 0600 files; these are disposable
+# runtime state, not notebooks or settings. Keep them on the container filesystem.
+JUPYTER_RUNTIME_DIR="$(mktemp -d /tmp/h3-jupyter-runtime.XXXXXX)"
+export JUPYTER_RUNTIME_DIR
+chmod 700 "$JUPYTER_RUNTIME_DIR"
+python3 - <<'PY'
+import os
+from pathlib import Path
+from jupyter_core.paths import secure_write
+
+probe = Path(os.environ["JUPYTER_RUNTIME_DIR"]) / "secure-write-check"
+try:
+    with secure_write(str(probe)) as stream:
+        stream.write("Jupyter runtime permissions verified")
+finally:
+    probe.unlink(missing_ok=True)
+print(f"Jupyter runtime ready at {probe.parent}; notebooks and settings remain on /workspace.")
+PY
 
 # The long-form workflow needs ComfyUI >= 0.35.0: MiniMaxH3AddGuide (which pins the
 # voiceover) first appeared in 0.34.0, and 0.35.0 is the first runpod/comfyui build
@@ -80,13 +107,10 @@ if [ ! -f "$COMFYUI_PATH/main.py" ]; then
 fi
 echo "ComfyUI: $COMFYUI_PATH"
 
-# ComfyUI runs from its own venv; a bare `pip` would install where it never looks.
-PY=""
-for cand in "$COMFYUI_PATH/.venv-cu128/bin/python" "$COMFYUI_PATH/.venv/bin/python"; do
-  [ -x "$cand" ] && { PY="$cand"; break; }
-done
-[ -n "$PY" ] || PY="$(command -v python3)"
-echo "ComfyUI Python: $PY"
+# Validation only needs the standard library. Use the image interpreter that
+# already passed preflight, not a possibly stale persisted ComfyUI virtualenv.
+PY="$(command -v python3)"
+echo "Setup validator Python: $PY"
 
 # Fail loudly, not 20 minutes into a render: without this node the workflow cannot
 # pin the voiceover and will not load.
@@ -198,8 +222,7 @@ download_local() {
   fetch_url "$dest" "https://huggingface.co/$HF_REPO/resolve/main/$rpath" hf || true
   file_ok "$dest" || { echo "  trying the ModelScope mirror..."; fetch_url "$dest" "$MS_BASE/$rpath" ms || true; }
   if ! file_ok "$dest"; then
-    rm -f "$dest"
-    echo "ERROR: could not download $fname."
+    echo "ERROR: could not download $fname. Existing files were retained for retry."
     return 1
   fi
   echo "$fname done."

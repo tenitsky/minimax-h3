@@ -58,6 +58,35 @@ test ! -e "$DEST"
 test -e "$DEST.hf.part"
 ''')
 
+    def test_success_exit_with_truncated_model_is_rejected(self):
+        self.fixture.write_bytes(self.fixture.read_bytes()[:-1])
+        self.run_script('''
+wget() { cp "$FIXTURE" "$DEST.hf.part"; }
+if fetch_url "$DEST" https://example.invalid/model hf; then exit 1; fi
+test ! -e "$DEST"
+test -e "$DEST.hf.part"
+''')
+
+    def test_failed_replacement_keeps_original_file(self):
+        self.run_script('''
+HF_BIN=''
+HF_REPO=fixture
+MS_BASE=https://example.invalid
+printf 'original user file' > "$DEST"
+wget() { return 1; }
+if download_local model.safetensors "$DEST"; then exit 1; fi
+test "$(cat "$DEST")" = 'original user file'
+''')
+
+    def test_existing_valid_model_skips_all_downloads(self):
+        self.run_script('''
+cp "$FIXTURE" "$DEST"
+hf_fast() { echo 'Unexpected HF call' >&2; exit 2; }
+fetch_url() { echo 'Unexpected wget call' >&2; exit 2; }
+download_local model.safetensors "$DEST"
+cmp "$FIXTURE" "$DEST"
+''')
+
     def test_bootstrap_command_matches_readme_and_parses(self):
         command_file = (ROOT / "runpod-start.json").read_text(encoding="utf-8")
         config = json.loads(command_file)

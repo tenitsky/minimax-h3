@@ -89,8 +89,9 @@ The 5 GB container disk holds disposable system files.
 
 The table's `ComfyUI/` paths are relative to `/workspace/runpod-slim/`.
 Setup verifies that `/workspace` is a separate mounted volume and tests file
-replacement, symlinks, and permission bits. POSIX-capable FUSE network mounts are
-allowed. It refuses to silently install the workspace onto the container disk.
+replacement, symlinks, and actual file execution. Network mounts with fixed
+permissions such as `0777` are allowed when execution works; exact `chmod` results
+are not required. It refuses to silently install the workspace onto the container disk.
 Mount inspection cannot verify the provider's retention policy: select a **Network
 Volume**, which persists independently of the pod. A pod-local Volume disk is lost
 when its pod is deleted. See [RunPod storage types](https://docs.runpod.io/pods/storage/types).
@@ -156,6 +157,9 @@ H3 GPU memory usage has not been benchmarked for this workflow.
 `JUPYTER_NO_AUTH=1` retains the existing no-login Jupyter behavior. For authenticated
 Jupyter, use `JUPYTER_NO_AUTH=0` and set `JUPYTER_PASSWORD` at deployment.
 JupyterLab opens at `/workspace`; save notebooks there for persistence.
+Temporary Jupyter connection files and cookie secrets use a private directory
+under `/tmp`, because Jupyter requires private permissions on those files.
+Setup checks this before model downloads; notebooks and settings remain on the volume.
 Do not override `COMFYUI_PATH`: the image starts ComfyUI at its fixed path.
 
 > **The image needs ComfyUI ≥ 0.35.0.** `MiniMaxH3AddGuide`, the node that pins your
@@ -193,6 +197,12 @@ For the first launch, check the logs for **`Network Volume workspace ready at
 port 8188 and JupyterLab on port 8888 once they are listening. If ComfyUI works but
 Jupyter stays on initializing, inspect `/jupyter.log` from the pod's terminal for
 the actual startup error.
+
+Startup prints the template revision so you can distinguish new attempts from old
+logs. Automated Linux checks cover fixed-mode workspace permissions, first boot
+and reboot with local model fixtures, download failures, workflow preservation,
+and a real Jupyter Server startup. They do not reproduce RunPod's actual mounted
+filesystem or run H3 generation on a GPU.
 
 ## After it boots
 
@@ -315,6 +325,8 @@ anything by hand, use that interpreter:
 │   ├── build_workflow.py                  # generates the workflow JSON; re-run after edits
 │   ├── test_longform.py                   # CPU + ffmpeg regression checks
 │   ├── test_storage.py                    # Network Volume mount and filesystem checks
+│   ├── test_boot.py                       # full setup with image/network fixtures
+│   ├── test_jupyter.py                    # auth patch and real Jupyter Server smoke test
 │   └── test_setup.py                      # Bash download checks using local fixtures
 └── workflows/
     └── minimax_h3_long_video_workflow.json

@@ -2,6 +2,7 @@
 import importlib.util
 import os
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -61,7 +62,7 @@ class StorageTests(unittest.TestCase):
         storage.probe_working_volume(self.local)
         self.assertEqual(preserved.read_bytes(), b"existing user file")
         self.assertEqual(list(self.local.iterdir()), [preserved])
-        for operation in ("symlink_to", "chmod"):
+        for operation in ("symlink_to", "write_bytes"):
             with self.subTest(operation=operation), patch.object(Path, operation, side_effect=OSError("not supported")):
                 with self.assertRaisesRegex(RuntimeError, "failed the POSIX check"):
                     storage.probe_working_volume(self.local)
@@ -70,6 +71,59 @@ class StorageTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "failed the POSIX check"):
                 storage.probe_working_volume(self.local)
         self.assertEqual(list(self.local.iterdir()), [preserved])
+
+    @unittest.skipIf(os.name == "nt", "Linux executable filesystem semantics required")
+    def test_working_volume_accepts_fixed_executable_modes(self):
+        chmod = Path.chmod
+        for mode in (0o755, 0o777):
+            def normalized_chmod(path, requested, *, follow_symlinks=True):
+                return chmod(path, mode, follow_symlinks=follow_symlinks)
+
+            with self.subTest(mode=oct(mode)), patch.object(Path, "chmod", normalized_chmod):
+                storage.probe_working_volume(self.local)
+            self.assertEqual(list(self.local.iterdir()), [])
+
+    @unittest.skipIf(os.name == "nt", "Linux executable filesystem semantics required")
+    def test_working_volume_accepts_chmod_denied_when_execution_works(self):
+        chmod = Path.chmod
+
+        def fixed_chmod(path, requested, *, follow_symlinks=True):
+            # Simulate an executable fixed-mode mount rejecting permission changes.
+            chmod(path, 0o777, follow_symlinks=follow_symlinks)
+            raise PermissionError("chmod not supported")
+
+        with patch.object(Path, "chmod", fixed_chmod):
+            storage.probe_working_volume(self.local)
+        self.assertEqual(list(self.local.iterdir()), [])
+
+    @unittest.skipIf(os.name == "nt", "Linux executable filesystem semantics required")
+    def test_working_volume_rejects_nonexecutable_files_and_cleans_up(self):
+        chmod = Path.chmod
+        preserved = self.write(self.local / "notebook.ipynb", b"existing user file")
+
+        def nonexecutable_chmod(path, requested, *, follow_symlinks=True):
+            return chmod(path, 0o644, follow_symlinks=follow_symlinks)
+
+        with patch.object(Path, "chmod", nonexecutable_chmod):
+            with self.assertRaisesRegex(RuntimeError, "could not execute a workspace file.*0644"):
+                storage.probe_working_volume(self.local)
+        self.assertEqual(list(self.local.iterdir()), [preserved])
+        self.assertEqual(preserved.read_bytes(), b"existing user file")
+
+    @unittest.skipIf(os.name == "nt", "Linux executable filesystem semantics required")
+    def test_working_volume_rejects_execution_failures_and_cleans_up(self):
+        failures = (PermissionError("noexec mount"),
+                    subprocess.TimeoutExpired("execution-check", 10),
+                    subprocess.CalledProcessError(1, "execution-check"))
+        for failure in failures:
+            with self.subTest(failure=failure), patch.object(storage.subprocess, "run", side_effect=failure) as run:
+                with self.assertRaisesRegex(RuntimeError, "could not execute a workspace file"):
+                    storage.probe_working_volume(self.local)
+                command = run.call_args.args[0]
+                self.assertEqual(len(command), 1)
+                self.assertTrue(Path(command[0]).is_relative_to(self.local))
+                self.assertNotIn("shell", run.call_args.kwargs)
+            self.assertEqual(list(self.local.iterdir()), [])
 
 
     def test_stale_global_variables_do_not_enable_remote_storage(self):

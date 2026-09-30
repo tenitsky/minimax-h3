@@ -2,6 +2,7 @@
 import argparse
 import os
 from pathlib import Path
+import subprocess
 import tempfile
 
 LOG = "[H3 Storage]"
@@ -16,7 +17,8 @@ def probe_working_volume(workspace):
     """Exercise required filesystem operations in a disposable private directory.
 
     This smoke check cannot prove atomicity or provider retention guarantees.
-    It does catch mounts that don't implement links, replacement, or mode bits.
+    Some network mounts expose fixed permission bits even when execution works.
+    Test execution itself, rather than requiring an exact chmod result.
     """
     try:
         with tempfile.TemporaryDirectory(prefix=".h3-posix-", dir=workspace) as directory:
@@ -29,9 +31,22 @@ def probe_working_volume(workspace):
             link.symlink_to(original)
             if link.read_bytes() != b"new" or not link.is_symlink():
                 raise OSError("symlink or file replacement did not work")
-            original.chmod(0o700)
-            if original.stat().st_mode & 0o777 != 0o700:
-                raise OSError("executable permission bits were not retained")
+            executable = base / "execution-check"
+            executable.write_bytes(b"#!/bin/sh\nexit 0\n")
+            chmod_error = None
+            try:
+                executable.chmod(0o700)
+            except OSError as exc:
+                # A fixed-mode mount may reject chmod but already permit execution.
+                chmod_error = exc
+            try:
+                # Execute directly: `bash script` would hide a noexec mount.
+                subprocess.run([str(executable)], check=True, timeout=10,
+                               stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            except (OSError, subprocess.SubprocessError) as exc:
+                mode = executable.stat().st_mode & 0o777
+                detail = f"; chmod failed: {chmod_error}" if chmod_error else ""
+                raise OSError(f"could not execute a workspace file (mode {mode:#05o}{detail}): {exc}") from exc
     except OSError as exc:
         raise RuntimeError(f"Working volume at {workspace} failed the POSIX check: {exc}. Use a regional Network Volume at /workspace.") from exc
 
