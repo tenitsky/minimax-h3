@@ -87,7 +87,9 @@ Use one writing pod per `minimax-h3` storage namespace.
 Allocate **100 GB for the regional Network Volume** as a starting point (not a
 measured capacity guarantee; long/high-resolution renders need more). Keep the
 **container disk at 5 GB**. Setup refuses to install without a separate working
-volume and rejects object-backed or memory-backed working mounts. Mount metadata
+volume and rejects known object-storage or memory-backed working mounts. FUSE
+network filesystems are allowed: setup tests file replacement, symlinks, and Unix
+permission bits instead of treating all FUSE mounts as Global Storage. Mount metadata
 cannot verify RunPod's retention policy: choose a **Network Volume**, not a
 pod-local Volume disk, to retain the workspace after deleting the pod.
 Setup requires at least **40 GiB free after copying ComfyUI**, for a staged model

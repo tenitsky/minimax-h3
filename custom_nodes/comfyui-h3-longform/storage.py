@@ -19,6 +19,35 @@ LOG = "[H3 Storage]"
 _workflow_lock = threading.Lock()
 
 
+def object_filesystem(kind):
+    """FUSE is an interface, not a storage type; POSIX network mounts use it too."""
+    return any(name in kind.lower() for name in ("s3fs", "geesefs", "gcsfuse", "rclone", "fuse.global"))
+
+
+def probe_working_volume(workspace):
+    """Exercise required filesystem operations in a disposable private directory.
+
+    This smoke check cannot prove atomicity or provider retention guarantees.
+    It does catch mounts that don't implement links, replacement, or mode bits.
+    """
+    try:
+        with tempfile.TemporaryDirectory(prefix=".h3-posix-", dir=workspace) as directory:
+            base = Path(directory)
+            original, replacement = base / "original", base / "replacement"
+            original.write_bytes(b"old")
+            replacement.write_bytes(b"new")
+            os.replace(replacement, original)
+            link = base / "link"
+            link.symlink_to(original)
+            if link.read_bytes() != b"new" or not link.is_symlink():
+                raise OSError("symlink or file replacement did not work")
+            original.chmod(0o700)
+            if original.stat().st_mode & 0o777 != 0o700:
+                raise OSError("executable permission bits were not retained")
+    except OSError as exc:
+        raise RuntimeError(f"Working volume at {workspace} failed the POSIX check: {exc}. Use a regional Network Volume at /workspace.") from exc
+
+
 def require_workspace_volume(workspace=Path("/workspace")):
     """Require a separate, non-ephemeral working mount before installing anything.
 
@@ -39,9 +68,10 @@ def require_workspace_volume(workspace=Path("/workspace")):
             kinds.append(fields[fields.index("-") + 1].lower())
     if not kinds:
         raise RuntimeError(f"No separate volume mounted at {workspace}; refusing to install on the disposable container disk. {instruction}")
-    if any(name in kind for kind in kinds for name in ("overlay", "tmpfs", "ramfs", "fuse", "s3fs", "gcs", "rclone")):
+    if any(object_filesystem(kind) or any(name in kind for name in ("overlay", "tmpfs", "ramfs")) for kind in kinds):
         raise RuntimeError(f"Workspace mount uses {', '.join(kinds)}, not a persistent POSIX working volume. {instruction}")
     check_working_path(workspace)
+    probe_working_volume(workspace)
     print(f"{LOG} separate working volume found at {workspace} ({kinds[-1]})")
 
 
@@ -60,7 +90,7 @@ def check_working_path(path):
             if target == path or target in path.parents:
                 matches.append((len(str(target)), fields[fields.index("-") + 1]))
         kind = max(matches, default=(0, ""))[1].lower()
-        if any(name in kind for name in ("fuse", "s3fs", "gcs", "rclone")):
+        if object_filesystem(kind):
             raise RuntimeError(f"Working path {path} uses {kind}. Set the Global Volume mount to /workspace-global; /workspace must be a persistent POSIX working volume.")
 
 

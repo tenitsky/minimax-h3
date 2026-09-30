@@ -199,21 +199,39 @@ class StorageTests(unittest.TestCase):
                 storage.require_workspace_volume(self.local)
 
     def test_workspace_rejects_ephemeral_and_object_mounts(self):
-        for kind in ("overlay", "tmpfs", "ramfs", "fuse.global", "s3fs"):
+        for kind in ("overlay", "tmpfs", "ramfs", "fuse.global", "s3fs", "fuse.geesefs", "fuse.rclone", "fuse.gcsfuse"):
             mounts = f"2 1 0:2 / {self.local.as_posix()} rw - {kind} volume rw\n"
             with self.subTest(kind=kind), patch.object(Path, "exists", return_value=True), patch.object(Path, "read_text", return_value=mounts):
                 with self.assertRaisesRegex(RuntimeError, "persistent POSIX working volume"):
                     storage.require_workspace_volume(self.local)
 
     def test_workspace_accepts_network_and_bind_mounts(self):
-        for kind in ("nfs", "nfs4", "ext4", "xfs"):
+        for kind in ("nfs", "nfs4", "ext4", "xfs", "fuse", "fuse.juicefs", "fuse.vstorage"):
             # Bind mounts may share the parent device; the mountinfo entry still
             # identifies the separate volume. Also exercise escaped mount paths.
             workspace = self.local / "path with spaces"
             target = workspace.as_posix().replace(" ", "\\040")
             mounts = f"2 1 0:1 /volume/subdir {target} rw - {kind} volume rw\n"
-            with self.subTest(kind=kind), patch.object(Path, "exists", return_value=True), patch.object(Path, "read_text", return_value=mounts):
+            with self.subTest(kind=kind), patch.object(Path, "exists", return_value=True), patch.object(Path, "read_text", return_value=mounts), patch.object(storage, "probe_working_volume") as probe:
                 storage.require_workspace_volume(workspace)
+                storage.check_working_path(workspace / "ComfyUI/output")
+                probe.assert_called_once_with(workspace.resolve())
+
+    @unittest.skipIf(os.name == "nt", "Linux POSIX filesystem semantics required")
+    def test_working_volume_probe_and_cleanup(self):
+        preserved = self.write(self.local / "notebook.ipynb", b"existing user file")
+        storage.probe_working_volume(self.local)
+        self.assertEqual(preserved.read_bytes(), b"existing user file")
+        self.assertEqual(list(self.local.iterdir()), [preserved])
+        for operation in ("symlink_to", "chmod"):
+            with self.subTest(operation=operation), patch.object(Path, operation, side_effect=OSError("not supported")):
+                with self.assertRaisesRegex(RuntimeError, "failed the POSIX check"):
+                    storage.probe_working_volume(self.local)
+            self.assertEqual(list(self.local.iterdir()), [preserved])
+        with patch.object(storage.os, "replace", side_effect=OSError("not supported")):
+            with self.assertRaisesRegex(RuntimeError, "failed the POSIX check"):
+                storage.probe_working_volume(self.local)
+        self.assertEqual(list(self.local.iterdir()), [preserved])
 
     @unittest.skipUnless(importlib.util.find_spec("aiohttp"), "aiohttp required for middleware tests")
     def test_ui_save_backs_up_and_reports_backup_failure(self):
