@@ -81,24 +81,19 @@ A missing or too-short tail stops the render with instructions to resume from 0.
 
 Intermediate files live in `output/h3_longform/<session>/`.
 
-## Global Volume backups
+## Persistent Network Volume
 
-When setup detects `/workspace-global`, encoding and stitching still run on the
-persistent regional Network Volume at `/workspace`. After each completed chunk,
-Write copies its carry tail and video to
-`/workspace-global/minimax-h3/output/` and verifies their checksums. A failed copy
-raises an error; resume from 0 retries backups for locally completed chunks too.
-Write only announces `FINISHED` after the final video's backup has verified.
+The template stores ComfyUI and all render files on the Network Volume at
+`/workspace`. Chunk videos and carry tails remain in the session folder for resume.
+When queued through ComfyUI's UI, the graph is saved alongside them as
+`workflow.json`. Final videos stay in ComfyUI's output directory.
 
-Setup on a replacement pod restores completed backups automatically. Partial or
-corrupt copies are ignored. Inputs live directly on the Global Volume. Sidebar
-workflows are edited locally (ComfyUI requires atomic rename) and backed up after
-successful UI saves; the current UI workflow is also captured with each rendered chunk. Queue
-from 0 to resume with the same settings. Use only one writing pod per global
-namespace; cross-pod concurrent writes are not supported in Global mode.
+Attach the same Network Volume to a replacement pod and queue from chunk 0 with
+the same settings. Completed chunks are reused directly from that volume.
+No remote backup service or second storage volume is required.
 
 Run local CPU checks with `python tools/test_longform.py` from the template root
 (requires torch, numpy, ffmpeg and ffprobe). They use synthetic frames to verify
 planning, audio overlap, carry loading, trimming, resume, workflow wiring, and mux
 timing without downloading model weights.
-Run `python tools/test_storage.py` for standard-library-only persistence tests.
+Run `python tools/test_storage.py` for Network Volume mount and filesystem checks.

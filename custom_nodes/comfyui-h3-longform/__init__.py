@@ -36,6 +36,7 @@ reconstructions, so sync is exact by construction.
 No dependencies beyond what ComfyUI already has, plus ffmpeg.
 """
 
+import json
 import os
 import shutil
 import subprocess
@@ -44,7 +45,6 @@ import numpy as np
 import torch
 
 import folder_paths
-from . import storage
 
 try:
     # Returning this from a node blocks everything downstream, so an
@@ -388,7 +388,6 @@ class H3LongformSplit:
 
     def split(self, audio, chunk_index, target_seconds, min_seconds, max_seconds,
               cut_mode="pause", skip_existing=True, motion_carry="off", prompt=None):
-        storage.root()  # fail clearly if an enabled Global Volume disappeared
         if min_seconds > max_seconds:
             min_seconds, max_seconds = max_seconds, min_seconds
         carry_setting = CARRY_OPTIONS.get(motion_carry, 0)
@@ -427,10 +426,6 @@ class H3LongformSplit:
                                 f"chunk_{chunk_index:04d}.mp4")
             tail_ready = not carry_setting or _read_tail(session, chunk_index, carry_setting) is not None
             if os.path.exists(done) and tail_ready:
-                # A previous attempt may have encoded locally but failed during
-                # upload. Retry persistence before declaring this chunk complete.
-                storage.backup_chunk(folder_paths.get_output_directory(), session,
-                                     chunk_index, bool(carry_setting))
                 print(f"{LOG} chunk {chunk_index + 1}/{len(spans)} already rendered "
                       f"- skipping.")
                 return blocked
@@ -634,9 +629,14 @@ class H3LongformWrite:
             if chunk_wav and os.path.exists(chunk_wav):
                 os.remove(chunk_wav)
         os.replace(chunk_tmp, chunk_mp4)
-        storage.backup_workflow(folder_paths.get_output_directory(), session, extra_pnginfo)
-        storage.backup_chunk(folder_paths.get_output_directory(), session,
-                             chunk_index, bool(carry and chunk_index < total_chunks - 1))
+        workflow = (extra_pnginfo or {}).get("workflow")
+        if isinstance(workflow, dict):
+            workflow_path = os.path.join(sdir, "workflow.json")
+            # Different chunk indices may render on separate pods sharing this volume.
+            workflow_tmp = os.path.join(sdir, f".workflow_{chunk_index:04d}.json.tmp")
+            with open(workflow_tmp, "w", encoding="utf-8") as stream:
+                json.dump(workflow, stream, ensure_ascii=False, indent=2)
+            os.replace(workflow_tmp, workflow_path)
 
         msg = f"chunk {chunk_index + 1}/{total_chunks} written ({n} frames)"
         print(f"{LOG} {msg}")
@@ -681,8 +681,6 @@ class H3LongformWrite:
         # Keep tails for a resumed render or a retry of the final chunk. Removing
         # them here would make the next run skip chunks whose lead-ins are missing.
 
-        # Do not signal success or clear the queue until the final upload verifies.
-        storage.backup_final(folder_paths.get_output_directory(), filename)
         msg = f"FINISHED: {out}"
         print(f"{LOG} {msg}")
 
@@ -749,5 +747,3 @@ NODE_DISPLAY_NAME_MAPPINGS = {
 }
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]
-
-storage.install_workflow_backup()

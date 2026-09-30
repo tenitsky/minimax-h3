@@ -68,6 +68,21 @@ test -e "$DEST.hf.part"
         script.write_text(config["cmd"][0], encoding="utf-8")
         subprocess.run([BASH, "-n", str(script)], check=True)
 
+    def test_model_download_uses_network_workspace_with_stale_global_env(self):
+        self.run_script('''
+COMFYUI_PATH="$(dirname "$DEST")/ComfyUI"
+export H3_GLOBAL_STORAGE=1
+export H3_GLOBAL_ROOT=/missing-global-volume
+download_local() {
+  test "$1" = diffusion_models/test.safetensors || return 1
+  test "$2" = "$COMFYUI_PATH/models/diffusion_models/test.safetensors" || return 1
+  mkdir -p "$(dirname "$2")"
+  cp "$FIXTURE" "$2"
+}
+download_h3 diffusion_models/test.safetensors
+file_ok "$COMFYUI_PATH/models/diffusion_models/test.safetensors"
+''')
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

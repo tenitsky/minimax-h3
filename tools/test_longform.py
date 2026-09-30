@@ -4,6 +4,7 @@ import importlib.util
 import io
 import json
 import math
+import os
 from pathlib import Path
 import random
 import shutil
@@ -194,46 +195,32 @@ class LongformTests(unittest.TestCase):
         self.assertTrue(math.isnan(h3.H3LongformSplit.IS_CHANGED()))
 
     @unittest.skipUnless(shutil.which("ffmpeg"), "ffmpeg required")
-    def test_render_global_backup_and_replacement_pod_restore(self):
-        remote = Path(self.tmp.name) / "global"
-        restored = Path(self.tmp.name) / "replacement"
+    def test_network_volume_render_and_new_process_resume(self):
         prompt = self.prompt("5 frames (~0.2s)")
         audio = {"waveform": torch.zeros((1, 1, 24000 * 7)), "sample_rate": 24000}
-        with patch.object(h3.storage, "root", return_value=remote), contextlib.redirect_stdout(io.StringIO()):
+        # Stale variables from the previous template must not trigger any backup
+        # or require a second volume, including when the node pack is re-imported.
+        with patch.dict(os.environ, {"H3_GLOBAL_STORAGE": "1", "H3_GLOBAL_ROOT": "/missing-global-volume"}), contextlib.redirect_stdout(io.StringIO()):
+            active = load("h3_network", ROOT / "custom_nodes/comfyui-h3-longform/__init__.py")
             index = 0
             while True:
-                chunk, length, keep, count, last, _, _, lead = h3.H3LongformSplit().split(
+                chunk, length, keep, count, last, _, _, lead = active.H3LongformSplit().split(
                     audio, index, 5, 5, 5, prompt=prompt, motion_carry="5 frames (~0.2s)")
                 images = torch.zeros((length, 16, 16, 3))
-                h3.H3LongformWrite().write(images, audio, index, count, keep, "test", "final.mp4",
-                                         chunk, False, lead, prompt, {"workflow": builder.build()})
-                self.assertTrue(h3.storage.valid(remote / "output/h3_longform/test" / f"chunk_{index:04d}.mp4"))
+                active.H3LongformWrite().write(images, audio, index, count, keep, "test", "final.mp4",
+                                             chunk, False, lead, prompt, {"workflow": builder.build()})
+                self.assertTrue((Path(self.tmp.name) / "h3_longform/test" / f"chunk_{index:04d}.mp4").exists())
                 if last:
                     break
                 index += 1
-            self.assertTrue(h3.storage.valid(remote / "output/final.mp4"))
-            h3.storage.restore(restored)
-            self.assertTrue((restored / "h3_longform/test/.carry/tail_0000.npz").exists())
-            self.assertTrue((restored / "h3_longform/test/workflow.json").exists())
-            folder_paths.get_output_directory = lambda: str(restored)
-            result = h3.H3LongformSplit().split(audio, 0, 5, 5, 5, prompt=prompt, motion_carry="5 frames (~0.2s)")
+            output = Path(self.tmp.name)
+            self.assertTrue((output / "final.mp4").exists())
+            self.assertTrue((output / "h3_longform/test/.carry/tail_0000.npz").exists())
+            self.assertEqual(json.loads((output / "h3_longform/test/workflow.json").read_text()), builder.build())
+            # Re-import the nodes as a replacement Pod would, with the same volume.
+            resumed = load("h3_resumed", ROOT / "custom_nodes/comfyui-h3-longform/__init__.py")
+            result = resumed.H3LongformSplit().split(audio, 0, 5, 5, 5, prompt=prompt, motion_carry="5 frames (~0.2s)")
             self.assertIsInstance(result[0], ExecutionBlocker)
-
-    @unittest.skipUnless(shutil.which("ffmpeg"), "ffmpeg required")
-    def test_backup_failure_is_retried_before_skipping_local_chunk(self):
-        prompt = self.prompt("5 frames (~0.2s)")
-        audio = {"waveform": torch.zeros((1, 2, 24000 * 31)), "sample_rate": 24000}
-        split = h3.H3LongformSplit()
-        chunk, length, keep, count, _, _, _, lead = split.split(audio, 0, 12, 5, 15, prompt=prompt, motion_carry="5 frames (~0.2s)")
-        images = torch.zeros((length, 16, 16, 3))
-        with patch.object(h3.storage, "backup_chunk", side_effect=OSError("upload failed")):
-            with self.assertRaisesRegex(OSError, "upload failed"):
-                h3.H3LongformWrite().write(images, audio, 0, count, keep, "test", "final.mp4", chunk, False, lead, prompt)
-        self.assertTrue((Path(self.tmp.name) / "h3_longform/test/chunk_0000.mp4").exists())
-        with patch.object(h3.storage, "backup_chunk") as backup:
-            result = split.split(audio, 0, 12, 5, 15, prompt=prompt, motion_carry="5 frames (~0.2s)")
-            self.assertIsInstance(result[0], ExecutionBlocker)
-            backup.assert_called_once_with(self.tmp.name, "test", 0, True)
 
 
 if __name__ == "__main__":

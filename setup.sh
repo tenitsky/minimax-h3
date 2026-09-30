@@ -6,6 +6,9 @@ echo "=== Starting MiniMax H3 Template Setup ==="
 echo "LICENCE: MiniMax H3 open weights are NOT licensed for use in the US, EU, UK or"
 echo "South Korea (MiniMax H3 Community License). See README.md before using this pod."
 
+# Older public templates may still inject these. They no longer enable anything.
+unset H3_GLOBAL_STORAGE H3_GLOBAL_MOUNT H3_GLOBAL_ROOT H3_LOCAL_MIN_FREE_GB
+
 # Refuse a disposable workspace before doing installation work.
 # The image's /start.sh fixes ComfyUI at this path.
 export COMFYUI_PATH="${COMFYUI_PATH:-/workspace/runpod-slim/ComfyUI}"
@@ -39,22 +42,6 @@ export JUPYTER_CONFIG_DIR=/workspace/.jupyter
 export JUPYTER_DATA_DIR=/workspace/.local/share/jupyter
 export IPYTHONDIR=/workspace/.ipython
 mkdir -p "$JUPYTER_CONFIG_DIR" "$JUPYTER_DATA_DIR" "$IPYTHONDIR"
-
-# Global Volumes use a separate object-backed mount, never a replacement for the
-# working filesystem containing Python, caches and ffmpeg's temporary files.
-export H3_GLOBAL_MOUNT="${H3_GLOBAL_MOUNT:-/workspace-global}"
-case "${H3_GLOBAL_STORAGE:-auto}" in
-  auto) if mountpoint -q "$H3_GLOBAL_MOUNT"; then H3_GLOBAL_STORAGE=1; else H3_GLOBAL_STORAGE=0; fi ;;
-  0|1) ;;
-  *) echo "FATAL: H3_GLOBAL_STORAGE must be auto, 0 or 1."; exit 1 ;;
-esac
-if [ "$H3_GLOBAL_STORAGE" = "1" ]; then
-  mountpoint -q "$H3_GLOBAL_MOUNT" || { echo "FATAL: attach a Global Volume and set its mount path to $H3_GLOBAL_MOUNT (not /workspace)."; exit 1; }
-  export H3_GLOBAL_ROOT="${H3_GLOBAL_ROOT:-$H3_GLOBAL_MOUNT/minimax-h3}"
-  case "$COMFYUI_PATH/" in "$H3_GLOBAL_MOUNT/"*) echo "FATAL: ComfyUI must stay on the working disk."; exit 1 ;; esac
-else
-  unset H3_GLOBAL_ROOT
-fi
 
 # The long-form workflow needs ComfyUI >= 0.35.0: MiniMaxH3AddGuide (which pins the
 # voiceover) first appeared in 0.34.0, and 0.35.0 is the first runpod/comfyui build
@@ -119,11 +106,6 @@ if [ -d "$SCRIPT_DIR/custom_nodes" ]; then
 fi
 # The bundled nodes only use image-provided torch/numpy and system ffmpeg. Do not
 # reinstall every baked custom node's dependencies and risk replacing CUDA torch.
-
-STORAGE_HELPER="$COMFYUI_PATH/custom_nodes/comfyui-h3-longform/storage.py"
-if [ "$H3_GLOBAL_STORAGE" = "1" ]; then
-  "$PY" "$STORAGE_HELPER" configure "$COMFYUI_PATH"
-fi
 
 # 2. Model folders
 echo "Preparing model directories..."
@@ -224,25 +206,7 @@ download_local() {
 }
 
 download_h3() {
-  local rpath="$1" stage
-  if [ "$H3_GLOBAL_STORAGE" != "1" ]; then
-    download_local "$rpath" "$COMFYUI_PATH/models/$rpath"
-    return $?
-  fi
-  if ! "$PY" "$STORAGE_HELPER" model-ready "$rpath"; then
-    # Reuse a complete local model when migrating an existing pod. Otherwise stage
-    # one download at a time locally: HF locks and wget resume never touch FUSE.
-    stage="$COMFYUI_PATH/.h3-downloads/$rpath"
-    mkdir -p "$(dirname "$stage")" || return 1
-    if [ ! -L "$COMFYUI_PATH/models/$rpath" ] && file_ok "$COMFYUI_PATH/models/$rpath"; then
-      "$PY" "$STORAGE_HELPER" publish-model "$COMFYUI_PATH/models/$rpath" "$rpath" || return 1
-    else
-      download_local "$rpath" "$stage" || return 1
-      "$PY" "$STORAGE_HELPER" publish-model "$stage" "$rpath" || return 1
-      rm -f "$stage"
-    fi
-  fi
-  "$PY" "$STORAGE_HELPER" link-model "$COMFYUI_PATH" "$rpath"
+  download_local "$1" "$COMFYUI_PATH/models/$1"
 }
 
 # -------------------------------------------------------------------
@@ -280,7 +244,7 @@ if [ "$DOWNLOAD_REF2VA" = "1" ]; then
 fi
 
 if [ "$FAILED" = "1" ]; then
-  echo "FATAL: one or more model downloads/backups failed (see ERROR lines above)."
+  echo "FATAL: one or more model downloads failed (see ERROR lines above)."
   echo "         Restart the pod to retry - finished files are kept and skipped."
   exit 1
 fi
@@ -290,7 +254,7 @@ echo "Installing workflows..."
 WF_DEST="$COMFYUI_PATH/user/default/workflows"
 mkdir -p "$WF_DEST"
 if [ -d "$SCRIPT_DIR/workflows" ]; then
-  # Never overwrite a workflow already edited on this pod or Global Volume.
+  # Never overwrite a workflow already edited on the Network Volume.
   for workflow in "$SCRIPT_DIR/workflows/"*.json; do
     [ -e "$WF_DEST/$(basename "$workflow")" ] || cp "$workflow" "$WF_DEST/"
   done
@@ -298,10 +262,6 @@ if [ -d "$SCRIPT_DIR/workflows" ]; then
 else
   echo "No workflows directory found in repo, skipping."
 fi
-if [ "$H3_GLOBAL_STORAGE" = "1" ]; then
-  "$PY" "$STORAGE_HELPER" backup-workflows "$COMFYUI_PATH"
-fi
-
 # 5. Clean up the temporary git folder
 echo "Cleaning up temp files..."
 if [ "$SCRIPT_DIR" = /tmp/temp_repo ]; then rm -rf /tmp/temp_repo; fi
