@@ -19,15 +19,23 @@ if [ "$COMFYUI_PATH" != /workspace/runpod-slim/ComfyUI ]; then
 fi
 python3 "$SCRIPT_DIR/custom_nodes/comfyui-h3-longform/storage.py" preflight "$COMFYUI_PATH"
 
-# Apply before the image starts Jupyter; an empty JUPYTER_PASSWORD alone can
-# trigger automatic token generation in /start.sh.
+# Apply before the image starts Jupyter. The image's /start.sh runs JupyterLab
+# without a token when JUPYTER_DISABLE_AUTH=true, uses JUPYTER_PASSWORD as the
+# token when set, and otherwise does not start Jupyter at all. The exported value
+# reaches /start.sh through the final exec. Jupyter is optional, so a start script
+# without that switch is reported rather than stopping the pod.
 if [ "${JUPYTER_NO_AUTH:-1}" = "1" ]; then
+  export JUPYTER_DISABLE_AUTH=true
   echo "Jupyter authentication disabled: anyone with access to its URL can run commands."
-  if ! sed -i -E 's/--IdentityProvider\.token="\$\{JUPYTER_PASSWORD(:-)?\}"/--IdentityProvider.token="" --PasswordIdentityProvider.hashed_password=""/' /start.sh ||
-     ! grep -Fq -- '--IdentityProvider.token="" --PasswordIdentityProvider.hashed_password=""' /start.sh; then
-    echo "FATAL: could not configure Jupyter authentication in /start.sh."
-    echo "Check the image startup command, or set JUPYTER_NO_AUTH=0 to keep image authentication."
-    exit 1
+  if ! grep -q 'JUPYTER_DISABLE_AUTH' /start.sh 2>/dev/null; then
+    echo "WARNING: this image's /start.sh has no JUPYTER_DISABLE_AUTH switch, so JupyterLab"
+    echo "         may not start. Use runpod/comfyui:1.4.0-comfyuiv0.35.0-cuda13.0, or set"
+    echo "         JUPYTER_NO_AUTH=0 and JUPYTER_PASSWORD. ComfyUI is unaffected."
+  fi
+else
+  unset JUPYTER_DISABLE_AUTH
+  if [ -z "${JUPYTER_PASSWORD:-}" ]; then
+    echo "NOTE: JUPYTER_NO_AUTH=0 without JUPYTER_PASSWORD: the image does not start JupyterLab."
   fi
 fi
 

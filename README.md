@@ -179,8 +179,10 @@ logs `CUDA / venv status: OK` when the stacks match. If it warns that PyTorch is
 installed inside the persistent venv, a custom node installed its own copy:
 uninstall it from that venv.
 
-`JUPYTER_NO_AUTH=1` retains the existing no-login Jupyter behavior. For authenticated
-Jupyter, use `JUPYTER_NO_AUTH=0` and set `JUPYTER_PASSWORD` at deployment.
+`JUPYTER_NO_AUTH=1` runs Jupyter without a login: setup passes the image's own
+`JUPYTER_DISABLE_AUTH=true` switch to `/start.sh`. For authenticated Jupyter, use
+`JUPYTER_NO_AUTH=0` and set `JUPYTER_PASSWORD` at deployment; it becomes the token.
+With `JUPYTER_NO_AUTH=0` and no password, the image does not start Jupyter.
 JupyterLab opens at `/workspace`; save notebooks there for persistence.
 Temporary Jupyter connection files and cookie secrets use a private directory
 under `/tmp`, because Jupyter requires private permissions on those files.
@@ -380,7 +382,7 @@ file in the workflow's CLIPLoader.
 | `H3_TEXT_ENCODER` | `nvfp4` | `int8` downloads the 27 GB int8 Qwen3-VL encoder instead |
 | `DOWNLOAD_TURBO_LORA` | `1` | Leave this at `1`: downloads the 544p LoRA used by Fast Draft. The 768p LoRAs used by the standard and Fast workflows always download |
 | `DOWNLOAD_REF2VA` | `0` | `1` also pulls the Ref2VA model and LoRA for ComfyUI's R2V template |
-| `JUPYTER_NO_AUTH` | `1` | Disables Jupyter login (anyone with the URL gets a shell). Set `0` to keep the image's auth |
+| `JUPYTER_NO_AUTH` | `1` | Disables Jupyter login (anyone with the URL gets a shell). Set `0` and `JUPYTER_PASSWORD` for a login |
 | `JUPYTER_PASSWORD` | *(empty)* | Jupyter token, used when `JUPYTER_NO_AUTH=0` |
 | `FILEBROWSER_PASSWORD` | `adminadmin12` | FileBrowser on port 8080 (user `admin`). **Change the default** |
 | `COMFYUI_PATH` | `/workspace/runpod-slim/ComfyUI` | Leave unset; must match the base image's fixed startup path |
@@ -408,7 +410,7 @@ never install `torch` into it: PyTorch comes from the image.
 │   ├── test_longform.py                   # CPU + ffmpeg regression checks
 │   ├── test_storage.py                    # Network Volume mount and filesystem checks
 │   ├── test_boot.py                       # full setup with image/network fixtures
-│   ├── test_jupyter.py                    # auth patch and real Jupyter Server smoke test
+│   ├── test_jupyter.py                    # auth switch and real Jupyter Server smoke test
 │   └── test_setup.py                      # Bash download checks using local fixtures
 └── workflows/
     ├── minimax_h3_talking_head.json

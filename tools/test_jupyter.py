@@ -1,4 +1,4 @@
-"""Check image auth patching and Jupyter with persistent data and private runtime."""
+"""Check the Jupyter auth switch and Jupyter with persistent data and private runtime."""
 import json
 import os
 from pathlib import Path
@@ -22,36 +22,42 @@ RUNTIME = SETUP[SETUP.index("export JUPYTER_CONFIG_DIR="):SETUP.index("# The lon
 
 @unittest.skipUnless(BASH and Path(BASH).exists(), "Bash required")
 class JupyterTests(unittest.TestCase):
-    def test_auth_patch_accepts_both_image_token_spellings_and_restarts(self):
-        for token in ("${JUPYTER_PASSWORD}", "${JUPYTER_PASSWORD:-}"):
-            with self.subTest(token=token), tempfile.TemporaryDirectory(prefix="h3-auth-") as directory:
-                base = Path(directory)
-                start = base / "start.sh"
-                start.write_text(f'jupyter lab --IdentityProvider.token="{token}"\n', encoding="utf-8")
-                script = base / "patch.sh"
-                script.write_text('set -e\nexport JUPYTER_NO_AUTH=1\n' + AUTH.replace("/start.sh", shlex.quote(start.as_posix())), encoding="utf-8", newline="\n")
-                for _ in range(2):
-                    result = subprocess.run([BASH, str(script)], capture_output=True, text=True)
-                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                self.assertEqual(start.read_text().count('--IdentityProvider.token="" --PasswordIdentityProvider.hashed_password=""'), 1)
+    # The CUDA 13 image's start_jupyter() reads these; see runpod/containers
+    # official-templates/comfyui/scripts/start.sh.
+    IMAGE_START = 'if [ "${JUPYTER_DISABLE_AUTH:-}" = "true" ]; then JUPYTER_TOKEN=""; fi\n'
 
-    def test_authenticated_mode_keeps_image_token_and_unknown_format_fails(self):
+    def run_auth(self, start_text, env):
         with tempfile.TemporaryDirectory(prefix="h3-auth-") as directory:
             base = Path(directory)
             start = base / "start.sh"
-            original = 'jupyter lab --IdentityProvider.token="${JUPYTER_PASSWORD:-}"\n'
-            start.write_text(original, encoding="utf-8")
-            script = base / "patch.sh"
-            block = AUTH.replace("/start.sh", shlex.quote(start.as_posix()))
-            script.write_text('set -e\nexport JUPYTER_NO_AUTH=0\n' + block, encoding="utf-8", newline="\n")
+            start.write_text(start_text, encoding="utf-8")
+            script = base / "auth.sh"
+            script.write_text("set -e\n" + "".join(f"export {k}={shlex.quote(v)}\n" for k, v in env.items())
+                              + AUTH.replace("/start.sh", shlex.quote(start.as_posix()))
+                              + 'printf "DISABLE=%s\\n" "${JUPYTER_DISABLE_AUTH-unset}"\n',
+                              encoding="utf-8", newline="\n")
             result = subprocess.run([BASH, str(script)], capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            self.assertEqual(start.read_text(), original)
-            start.write_text("unsupported startup format\n", encoding="utf-8")
-            script.write_text('set -e\nexport JUPYTER_NO_AUTH=1\n' + block, encoding="utf-8", newline="\n")
-            result = subprocess.run([BASH, str(script)], capture_output=True, text=True)
-            self.assertNotEqual(result.returncode, 0)
-            self.assertIn("FATAL: could not configure Jupyter authentication", result.stdout)
+            self.assertEqual(start.read_text(), start_text, "setup must not edit the image's start script")
+            return result.stdout
+
+    def test_no_auth_uses_image_switch_without_editing_start_script(self):
+        for env in ({}, {"JUPYTER_NO_AUTH": "1"}):
+            with self.subTest(env=env):
+                out = self.run_auth(self.IMAGE_START, env)
+                self.assertIn("DISABLE=true", out)
+                self.assertNotIn("WARNING", out)
+
+    def test_authenticated_mode_and_unknown_image_never_stop_setup(self):
+        out = self.run_auth(self.IMAGE_START, {"JUPYTER_NO_AUTH": "0", "JUPYTER_PASSWORD": "secret",
+                                               "JUPYTER_DISABLE_AUTH": "true"})
+        self.assertIn("DISABLE=unset", out)
+        self.assertNotIn("NOTE", out)
+        out = self.run_auth(self.IMAGE_START, {"JUPYTER_NO_AUTH": "0"})
+        self.assertIn("does not start JupyterLab", out)
+        out = self.run_auth("unsupported startup format\n", {"JUPYTER_NO_AUTH": "1"})
+        self.assertIn("DISABLE=true", out)
+        self.assertIn("has no JUPYTER_DISABLE_AUTH switch", out)
 
     @unittest.skipUnless(os.name == "posix", "Linux runtime permissions and server startup")
     def test_private_runtime_starts_real_jupyter_and_keeps_user_data_persistent(self):

@@ -107,7 +107,7 @@ fi
         self.make_executable(self.start, """#!/bin/bash
 set -e
 start_jupyter() {
-  jupyter lab --IdentityProvider.token="${JUPYTER_PASSWORD:-}"
+  if [ "${JUPYTER_DISABLE_AUTH:-}" = "true" ]; then JUPYTER_TOKEN=""; fi
 }
 # The image service boundary is replaced, not the template's setup script.
 python3 - <<'PY'
@@ -115,7 +115,8 @@ import json, os
 from pathlib import Path
 keys = ('COMFYUI_PATH', 'HF_HOME', 'JUPYTER_CONFIG_DIR', 'JUPYTER_DATA_DIR',
         'JUPYTER_RUNTIME_DIR', 'IPYTHONDIR', 'H3_GLOBAL_STORAGE',
-        'H3_GLOBAL_MOUNT', 'H3_GLOBAL_ROOT', 'H3_LOCAL_MIN_FREE_GB')
+        'H3_GLOBAL_MOUNT', 'H3_GLOBAL_ROOT', 'H3_LOCAL_MIN_FREE_GB',
+        'JUPYTER_DISABLE_AUTH')
 Path(os.environ['BOOT_HANDOFF']).write_text(json.dumps({k: os.environ.get(k) for k in keys}))
 PY
 """)
@@ -210,6 +211,8 @@ cuda = SimpleNamespace(is_available=lambda: os.environ.get("BOOT_GPU", "1") == "
 
         state = json.loads(self.handoff.read_text())
         self.assertEqual(state["COMFYUI_PATH"], str(self.comfy))
+        self.assertEqual(state["JUPYTER_DISABLE_AUTH"], "true")
+        self.assertIn('JUPYTER_DISABLE_AUTH', self.start.read_text())
         runtime = Path(state["JUPYTER_RUNTIME_DIR"])
         self.assertIn(self.base, runtime.parents)
         self.assertNotIn(self.workspace, runtime.parents)
