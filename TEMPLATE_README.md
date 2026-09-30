@@ -7,6 +7,8 @@ motion carry between chunks.
 
 Attach **one Network Volume at `/workspace`**. Start with **100 GB**; large renders
 and optional models may need more. Keep the container disk at **5 GB**.
+The public template's 0 GB Volume disk default expects you to attach your own
+Network Volume when deploying; it does not provide storage by itself.
 
 ComfyUI, its Python environment, models, inputs, workflows, Jupyter files, and render
 progress stay on the Network Volume. Save notebooks under `/workspace`.

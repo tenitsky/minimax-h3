@@ -131,9 +131,9 @@ restarting. Fresh installations have no migration step.
 | Base image | `runpod/comfyui:1.4.0-rc.164-comfyuiv0.35.0-cuda12.8` |
 | Registry authentication | None; image is public |
 | Container disk | **5 GB** |
-| Persistent storage | **Network storage** |
+| Persistent storage in the public template editor | **Volume disk**, **0 GB**; no publisher-owned volume selected |
 | Template volume mount path | **`/workspace`** |
-| Network Volume | Each deployer attaches their own; **100 GB recommended** |
+| Network Volume at deployment | Each deployer attaches their own at `/workspace`; **100 GB recommended** |
 | HTTP ports | **`8188,8888`** (ComfyUI, JupyterLab) |
 | TCP ports | None required; expose `22` only if SSH is wanted |
 | Environment variables | `JUPYTER_NO_AUTH=1`; `HF_TOKEN` optional |
@@ -142,6 +142,13 @@ restarting. Fresh installations have no migration step.
 Publish the image, command, ports and defaults. Each deployer selects their own
 Network Volume when deploying. The startup script does not create or attach RunPod
 volumes. No storage environment variables are required.
+
+The template editor's **Volume disk / 0 GB** is intentional: the required Network
+Volume is chosen by each user at deployment and replaces the pod-local volume disk.
+The template itself does not provide persistent capacity. Deploying without an
+attached volume will stop at the workspace check. Keep the mount path `/workspace`;
+setup creates `runpod-slim/ComfyUI` inside it automatically.
+See [attaching a Network Volume](https://docs.runpod.io/storage/network-volumes).
 
 For GPU Compatibility, start with 80 GB or more VRAM for initial testing. Actual
 H3 GPU memory usage has not been benchmarked for this workflow.
