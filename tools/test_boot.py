@@ -24,6 +24,7 @@ MODEL_NAMES = {
     "minimax_h3_audio_vae_fp32.safetensors",
     "minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors",
     "minimax_h3_fl2v_turbo_4step_v1.0_768p_comfyui_bf16.safetensors",
+    "minimax_h3_fl2v_turbo_8step_v1.0_768p_comfyui_bf16.safetensors",
 }
 
 
@@ -180,18 +181,18 @@ os.chmod = fixed_workspace_chmod
         first = self.boot()
         self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
         self.assertTrue(self.handoff.exists(), first.stdout + first.stderr)
-        self.assertEqual(len(self.downloads()), 6)
+        self.assertEqual(len(self.downloads()), 7)
         self.assertEqual({p.name for p in (self.comfy / "models").rglob("*.safetensors")}, MODEL_NAMES)
         self.assertTrue((self.comfy / "custom_nodes/comfyui-h3-longform/__init__.py").is_file())
-        installed_workflow = self.comfy / "user/default/workflows/minimax_h3_long_video_workflow.json"
+        installed_workflow = self.comfy / "user/default/workflows/minimax_h3_long_video_v2.json"
         self.assertEqual(json.loads(installed_workflow.read_text()),
-                         json.loads((ROOT / "workflows/minimax_h3_long_video_workflow.json").read_text()))
-        installed_fast = self.comfy / "user/default/workflows/minimax_h3_fast_workflow.json"
+                         json.loads((ROOT / "workflows/minimax_h3_long_video_v2.json").read_text()))
+        installed_fast = self.comfy / "user/default/workflows/minimax_h3_fast_v2.json"
         self.assertEqual(json.loads(installed_fast.read_text()),
-                         json.loads((ROOT / "workflows/minimax_h3_fast_workflow.json").read_text()))
-        installed_draft = self.comfy / "user/default/workflows/minimax_h3_fast_draft_workflow.json"
+                         json.loads((ROOT / "workflows/minimax_h3_fast_v2.json").read_text()))
+        installed_draft = self.comfy / "user/default/workflows/minimax_h3_fast_draft_v2.json"
         self.assertEqual(json.loads(installed_draft.read_text()),
-                         json.loads((ROOT / "workflows/minimax_h3_fast_draft_workflow.json").read_text()))
+                         json.loads((ROOT / "workflows/minimax_h3_fast_draft_v2.json").read_text()))
 
         state = json.loads(self.handoff.read_text())
         self.assertEqual(state["COMFYUI_PATH"], str(self.comfy))
@@ -220,7 +221,7 @@ os.chmod = fixed_workspace_chmod
         restart = self.boot()
         self.assertEqual(restart.returncode, 0, restart.stdout + restart.stderr)
         self.assertTrue(self.handoff.exists())
-        self.assertEqual(len(self.downloads()), 6, "Completed models must not be downloaded again")
+        self.assertEqual(len(self.downloads()), 7, "Completed models must not be downloaded again")
         self.assertFalse(broken_log.exists(), "Model validation must use the working image interpreter")
         self.assertEqual(installed_workflow.read_text(), edited_workflow)
         self.assertEqual(installed_fast.read_text(), edited_fast)
@@ -246,8 +247,8 @@ os.chmod = fixed_workspace_chmod
         self.assertFalse((self.comfy / "models/vae" / failed_model).exists())
         self.assertTrue((self.comfy / "models/vae" / (failed_model + ".hf.part")).exists())
         self.assertTrue((self.comfy / "models/vae" / (failed_model + ".ms.part")).exists())
-        self.assertEqual(len(self.downloads()), 7)
-        self.assertEqual(len(list((self.comfy / "models").rglob("*.safetensors"))), 5)
+        self.assertEqual(len(self.downloads()), 8)
+        self.assertEqual(len(list((self.comfy / "models").rglob("*.safetensors"))), 6)
 
     def test_existing_incomplete_comfy_directory_is_not_deleted(self):
         self.comfy.mkdir(parents=True)

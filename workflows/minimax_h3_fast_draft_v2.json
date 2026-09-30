@@ -1,8 +1,8 @@
 {
- "id": "a4fb6153-c9bf-4ba8-9b8a-e495d1b00804",
+ "id": "b3f7d0c4-81a9-4e62-9c5d-2a6e7f1b8d93",
  "revision": 0,
- "last_node_id": 75,
- "last_link_id": 45,
+ "last_node_id": 77,
+ "last_link_id": 47,
  "nodes": [
   {
    "id": 1,
@@ -13,7 +13,7 @@
    ],
    "size": [
     360,
-    610
+    640
    ],
    "flags": {},
    "order": 0,
@@ -23,9 +23,35 @@
    "properties": {
     "Node name for S&R": "MarkdownNote"
    },
-   "title": "MiniMax H3 Fast - start here",
+   "title": "MiniMax H3 Fast Draft - lower detail, less GPU work",
    "widgets_values": [
-    "# MiniMax H3 Fast\n\nDedicated **4-step 768p Turbo** LoRA. Same portrait + voiceover, automatic chunks,\nresume and final stitching as the standard workflow. No extra model selection.\n\n1. Upload **Portrait** and **Voiceover**. Leave chunk_index on **increment**.\n2. Test one chunk (batch count 1). Reset chunk_index to 0 to resume.\n3. Queue enough items: audio seconds / 12, plus a margin. The final chunk stitches\n   `output/<audio name>_fast.mp4` and clears the queue.\n\nFast sessions have `_fast` in their names, so standard renders are kept separate.\nUse a new Name suffix if you change inputs or settings. Width/Height default to\n768 x 768; 1344 x 768 or 768 x 1344 use more memory and compute.\n\nModel and sampling nodes below are collapsed: double-click to inspect them.\nFour sampling steps instead of eight should reduce sampling time; total speed,\nlip sync and identity still need GPU testing. Quality can differ from 8 steps.\nMotion carry is optional on Split; leave off for the first test.\n\nLicence and full instructions: https://github.com/tenitsky/minimax-h3\n"
+    "# MiniMax H3 Fast Draft\n\n**544 x 544, four steps** - the 544p-trained Turbo LoRA in its supported four-step mode (video/audio shift 12/3), INT8 attention and Sol-Attn sparse attention. About half the pixels per frame of the 768 workflows: use it to check timing and framing, then render the final with Fast or the standard workflow.\n\n1. Upload **Portrait** and **Voiceover**.\n2. In **Talking-Head Prompt**, describe the `subject` and `background` you see in the portrait.\n3. Test one chunk (batch count 1). Then set chunk_index to **0** and queue audio seconds / 8, plus a margin. The final chunk stitches `output/<audio name>_draft_v2.mp4`.\n\nThe LoRA filename says 8step; four-step inference is intentional and supported by its authors.\n\nModel and sampling nodes below are collapsed: double-click to inspect them.\n\nLicence and full instructions: https://github.com/tenitsky/minimax-h3\n"
+   ],
+   "color": "#222",
+   "bgcolor": "#000"
+  },
+  {
+   "id": 7,
+   "type": "MarkdownNote",
+   "pos": [
+    1680,
+    0
+   ],
+   "size": [
+    460,
+    560
+   ],
+   "flags": {},
+   "order": 1,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "properties": {
+    "Node name for S&R": "MarkdownNote"
+   },
+   "title": "Note: Keeping the background and the frame clean",
+   "widgets_values": [
+    "## Keeping the background and the frame clean\n\nH3 pins your portrait only at the **first and last frame** of each chunk. Every frame in between is generated, and the model fills whatever the prompt leaves open - a changing backdrop, a lower-third, a channel logo.\n\nThis workflow closes those gaps:\n\n- **Describe the portrait** in the Talking-Head Prompt: `subject` (who, what they wear) and `background` (what is behind them, concretely). Naming the background is what holds it in place.\n- The prompt uses MiniMax's own format exactly: the alignment line, then the three fields `integrated_multimodal_description`, `overall_soundscape` and `non_diegetic_music`. It states a locked-off camera, one person, and no text, logos or graphics.\n- Chunks are capped at **10 s** (H3 can do 15). Less time between anchors means less invention.\n- Each Turbo LoRA runs at the resolution and sigma shift it was distilled at.\n\n**Still seeing changes?** Make `background` more specific (colours, objects, lighting), lower `max_seconds` on Split to 8, or render the final pass with Turbo off.\n\nUse a portrait with a simple, evenly lit background, and nothing text-like in it: signs, screens and logos in the portrait tend to animate."
    ],
    "color": "#222",
    "bgcolor": "#000"
@@ -42,7 +68,7 @@
     360
    ],
    "flags": {},
-   "order": 1,
+   "order": 2,
    "mode": 0,
    "inputs": [],
    "outputs": [
@@ -51,7 +77,7 @@
      "name": "IMAGE",
      "type": "IMAGE",
      "links": [
-      6
+      9
      ]
     },
     {
@@ -85,7 +111,7 @@
     140
    ],
    "flags": {},
-   "order": 2,
+   "order": 3,
    "mode": 0,
    "inputs": [],
    "outputs": [
@@ -95,7 +121,7 @@
      "type": "AUDIO",
      "links": [
       1,
-      37
+      40
      ]
     }
    ],
@@ -124,7 +150,7 @@
     90
    ],
    "flags": {},
-   "order": 3,
+   "order": 4,
    "mode": 0,
    "inputs": [],
    "outputs": [
@@ -134,8 +160,8 @@
      "type": "INT",
      "links": [
       2,
-      12,
-      39
+      15,
+      42
      ]
     }
    ],
@@ -163,7 +189,7 @@
     90
    ],
    "flags": {},
-   "order": 4,
+   "order": 5,
    "mode": 0,
    "inputs": [],
    "outputs": [
@@ -172,8 +198,8 @@
      "name": "INT",
      "type": "INT",
      "links": [
-      7,
-      17
+      10,
+      20
      ]
     }
    ],
@@ -183,7 +209,7 @@
    },
    "title": "Width",
    "widgets_values": [
-    768,
+    544,
     "fixed"
    ]
   },
@@ -199,7 +225,7 @@
     90
    ],
    "flags": {},
-   "order": 5,
+   "order": 6,
    "mode": 0,
    "inputs": [],
    "outputs": [
@@ -208,8 +234,8 @@
      "name": "INT",
      "type": "INT",
      "links": [
-      8,
-      18
+      11,
+      21
      ]
     }
    ],
@@ -219,7 +245,7 @@
    },
    "title": "Height",
    "widgets_values": [
-    768,
+    544,
     "fixed"
    ]
   },
@@ -228,14 +254,14 @@
    "type": "H3LongformSplit",
    "pos": [
     770,
-    365
+    395
    ],
    "size": [
     420,
     290
    ],
    "flags": {},
-   "order": 6,
+   "order": 7,
    "mode": 0,
    "inputs": [
     {
@@ -260,7 +286,7 @@
      "name": "audio_chunk",
      "type": "AUDIO",
      "links": [
-      38
+      41
      ]
     },
     {
@@ -268,7 +294,8 @@
      "name": "length",
      "type": "INT",
      "links": [
-      19
+      3,
+      22
      ]
     },
     {
@@ -276,7 +303,7 @@
      "name": "keep_frames",
      "type": "INT",
      "links": [
-      41
+      44
      ]
     },
     {
@@ -284,7 +311,7 @@
      "name": "total_chunks",
      "type": "INT",
      "links": [
-      40
+      43
      ]
     },
     {
@@ -297,16 +324,14 @@
      "localized_name": "alignment",
      "name": "alignment",
      "type": "STRING",
-     "links": [
-      3
-     ]
+     "links": []
     },
     {
      "localized_name": "guide_audio",
      "name": "guide_audio",
      "type": "AUDIO",
      "links": [
-      25
+      28
      ]
     },
     {
@@ -314,8 +339,9 @@
      "name": "carry_frames",
      "type": "INT",
      "links": [
-      13,
-      42
+      4,
+      16,
+      45
      ]
     }
    ],
@@ -326,9 +352,9 @@
    "title": "1. Split Audio Chunk (H3 frame grid)",
    "widgets_values": [
     0,
-    12.0,
+    8.0,
     5.0,
-    15.0,
+    10.0,
     "pause",
     true,
     "off"
@@ -346,7 +372,7 @@
     130
    ],
    "flags": {},
-   "order": 7,
+   "order": 8,
    "mode": 0,
    "inputs": [],
    "outputs": [
@@ -355,7 +381,7 @@
      "name": "name",
      "type": "STRING",
      "links": [
-      43
+      46
      ]
     },
     {
@@ -363,7 +389,7 @@
      "name": "filename",
      "type": "STRING",
      "links": [
-      44
+      47
      ]
     }
    ],
@@ -375,101 +401,68 @@
    "widgets_values": [
     ".mp4",
     "",
-    "_fast"
+    "_draft_v2"
    ]
   },
   {
    "id": 30,
-   "type": "PrimitiveStringMultiline",
+   "type": "H3LongformPrompt",
    "pos": [
     770,
     0
    ],
    "size": [
     420,
-    330
+    360
    ],
    "flags": {},
-   "order": 8,
-   "mode": 0,
-   "inputs": [],
-   "outputs": [
-    {
-     "localized_name": "STRING",
-     "name": "STRING",
-     "type": "STRING",
-     "links": [
-      4
-     ]
-    }
-   ],
-   "properties": {
-    "Node name for S&R": "PrimitiveStringMultiline",
-    "cnr_id": "comfy-core"
-   },
-   "title": "Prompt",
-   "widgets_values": [
-    "integrated_multimodal_description: [Shot 1] Live-action, a presenter - the person in the reference pictures - speaks directly to the camera. The camera remains stationary on a tripod with a fixed focal length throughout the entire shot. Framing, subject size and camera distance remain identical to the reference pictures in every frame. No zoom, dolly, pan, tilt, reframing or cuts. The presenter (S1) talks in a clear, natural voice, lip movements matching the provided speech audio exactly, with subtle eyebrow and jaw movement, natural blinking and small head nods while talking. Face, hair, clothing, lighting and background match the reference pictures exactly throughout.\n\noverall_soundscape: Quiet indoor room tone under the voice. No music, no sound effects."
-   ],
-   "color": "#322",
-   "bgcolor": "#533"
-  },
-  {
-   "id": 31,
-   "type": "StringConcatenate",
-   "pos": [
-    585,
-    900
-   ],
-   "size": [
-    400,
-    200
-   ],
-   "flags": {
-    "collapsed": true
-   },
    "order": 9,
    "mode": 0,
    "inputs": [
     {
-     "localized_name": "string_a",
-     "name": "string_a",
-     "type": "STRING",
+     "localized_name": "length",
+     "name": "length",
+     "type": "INT",
      "link": 3,
      "widget": {
-      "name": "string_a"
+      "name": "length"
      }
     },
     {
-     "localized_name": "string_b",
-     "name": "string_b",
-     "type": "STRING",
+     "localized_name": "carry_frames",
+     "name": "carry_frames",
+     "type": "INT",
      "link": 4,
      "widget": {
-      "name": "string_b"
+      "name": "carry_frames"
      }
     }
    ],
    "outputs": [
     {
-     "localized_name": "STRING",
-     "name": "STRING",
+     "localized_name": "prompt",
+     "name": "prompt",
      "type": "STRING",
      "links": [
-      16
+      19
      ]
     }
    ],
    "properties": {
-    "Node name for S&R": "StringConcatenate",
-    "cnr_id": "comfy-core"
+    "Node name for S&R": "H3LongformPrompt",
+    "cnr_id": "comfyui-h3-longform"
    },
-   "title": "alignment + prompt",
+   "title": "Talking-Head Prompt (describe subject + background)",
    "widgets_values": [
+    124,
+    0,
     "",
     "",
-    "\n\n"
-   ]
+    "a clear, calm, natural voice",
+    ""
+   ],
+   "color": "#322",
+   "bgcolor": "#533"
   },
   {
    "id": 40,
@@ -544,7 +537,7 @@
      "name": "MODEL",
      "type": "MODEL",
      "links": [
-      45
+      6
      ]
     }
    ],
@@ -553,24 +546,24 @@
     "cnr_id": "comfy-core",
     "models": [
      {
-      "name": "minimax_h3_fl2v_turbo_4step_v1.0_768p_comfyui_bf16.safetensors",
-      "url": "https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/loras/minimax_h3_fl2v_turbo_4step_v1.0_768p_comfyui_bf16.safetensors",
+      "name": "minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors",
+      "url": "https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/loras/minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors",
       "directory": "loras"
      }
     ]
    },
+   "title": "544p Turbo v1.0 (four-step mode)",
    "widgets_values": [
-    "minimax_h3_fl2v_turbo_4step_v1.0_768p_comfyui_bf16.safetensors",
+    "minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors",
     1
-   ],
-   "title": "Fast: 4-step 768p Turbo LoRA"
+   ]
   },
   {
-   "id": 42,
-   "type": "CLIPLoader",
+   "id": 75,
+   "type": "MiniMaxH3SigmaShift",
    "pos": [
     25,
-    955
+    900
    ],
    "size": [
     520,
@@ -581,6 +574,50 @@
    },
    "order": 12,
    "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "model",
+     "name": "model",
+     "type": "MODEL",
+     "link": 6
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "MODEL",
+     "name": "MODEL",
+     "type": "MODEL",
+     "links": [
+      7
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "MiniMaxH3SigmaShift",
+    "cnr_id": "comfy-core"
+   },
+   "title": "Turbo sigma shift (video 12 / audio 3)",
+   "widgets_values": [
+    12.0,
+    3.0
+   ]
+  },
+  {
+   "id": 42,
+   "type": "CLIPLoader",
+   "pos": [
+    25,
+    1065
+   ],
+   "size": [
+    520,
+    110
+   ],
+   "flags": {
+    "collapsed": true
+   },
+   "order": 13,
+   "mode": 0,
    "inputs": [],
    "outputs": [
     {
@@ -588,7 +625,7 @@
      "name": "CLIP",
      "type": "CLIP",
      "links": [
-      9
+      12
      ]
     }
    ],
@@ -614,7 +651,7 @@
    "type": "VAELoader",
    "pos": [
     25,
-    1010
+    1120
    ],
    "size": [
     520,
@@ -623,7 +660,7 @@
    "flags": {
     "collapsed": true
    },
-   "order": 13,
+   "order": 14,
    "mode": 0,
    "inputs": [],
    "outputs": [
@@ -632,9 +669,9 @@
      "name": "VAE",
      "type": "VAE",
      "links": [
-      10,
-      22,
-      35
+      13,
+      25,
+      38
      ]
     }
    ],
@@ -659,7 +696,7 @@
    "type": "VAELoader",
    "pos": [
     25,
-    1065
+    1175
    ],
    "size": [
     520,
@@ -668,7 +705,7 @@
    "flags": {
     "collapsed": true
    },
-   "order": 14,
+   "order": 15,
    "mode": 0,
    "inputs": [],
    "outputs": [
@@ -677,7 +714,7 @@
      "name": "VAE",
      "type": "VAE",
      "links": [
-      23
+      26
      ]
     }
    ],
@@ -698,6 +735,101 @@
    ]
   },
   {
+   "id": 76,
+   "type": "ModelAttentionBackend",
+   "pos": [
+    25,
+    955
+   ],
+   "size": [
+    300,
+    60
+   ],
+   "flags": {
+    "collapsed": true
+   },
+   "order": 16,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "model",
+     "name": "model",
+     "type": "MODEL",
+     "link": 7
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "model",
+     "name": "model",
+     "type": "MODEL",
+     "links": [
+      8
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "ModelAttentionBackend",
+    "cnr_id": "comfy-core"
+   },
+   "title": "Attention backend (INT8, like SageAttention)",
+   "widgets_values": [
+    "comfy kitchen attention"
+   ]
+  },
+  {
+   "id": 77,
+   "type": "BlockSparseAttention",
+   "pos": [
+    25,
+    1010
+   ],
+   "size": [
+    300,
+    230
+   ],
+   "flags": {
+    "collapsed": true
+   },
+   "order": 17,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "model",
+     "name": "model",
+     "type": "MODEL",
+     "link": 8
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "model",
+     "name": "model",
+     "type": "MODEL",
+     "links": [
+      29,
+      31
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "BlockSparseAttention",
+    "cnr_id": "comfy-core"
+   },
+   "title": "Model Sparse Attention (Sol-Attn)",
+   "widgets_values": [
+    "sol-attn",
+    1.3,
+    0.2,
+    1.0,
+    "",
+    12288,
+    256,
+    "exact_kv_and_rows",
+    false
+   ]
+  },
+  {
    "id": 50,
    "type": "ImageScale",
    "pos": [
@@ -711,20 +843,20 @@
    "flags": {
     "collapsed": true
    },
-   "order": 15,
+   "order": 18,
    "mode": 0,
    "inputs": [
     {
      "localized_name": "image",
      "name": "image",
      "type": "IMAGE",
-     "link": 6
+     "link": 9
     },
     {
      "localized_name": "width",
      "name": "width",
      "type": "INT",
-     "link": 7,
+     "link": 10,
      "widget": {
       "name": "width"
      }
@@ -733,7 +865,7 @@
      "localized_name": "height",
      "name": "height",
      "type": "INT",
-     "link": 8,
+     "link": 11,
      "widget": {
       "name": "height"
      }
@@ -745,8 +877,8 @@
      "name": "IMAGE",
      "type": "IMAGE",
      "links": [
-      11,
-      15
+      14,
+      18
      ]
     }
    ],
@@ -757,8 +889,8 @@
    "title": "Crop portrait to canvas",
    "widgets_values": [
     "lanczos",
-    768,
-    768,
+    544,
+    544,
     "center"
    ]
   },
@@ -776,20 +908,20 @@
    "flags": {
     "collapsed": true
    },
-   "order": 16,
+   "order": 19,
    "mode": 0,
    "inputs": [
     {
      "localized_name": "portrait",
      "name": "portrait",
      "type": "IMAGE",
-     "link": 11
+     "link": 14
     },
     {
      "localized_name": "chunk_index",
      "name": "chunk_index",
      "type": "INT",
-     "link": 12,
+     "link": 15,
      "widget": {
       "name": "chunk_index"
      }
@@ -798,7 +930,7 @@
      "localized_name": "carry_frames",
      "name": "carry_frames",
      "type": "INT",
-     "link": 13,
+     "link": 16,
      "widget": {
       "name": "carry_frames"
      }
@@ -810,7 +942,7 @@
      "name": "first_frame",
      "type": "IMAGE",
      "links": [
-      14
+      17
      ]
     },
     {
@@ -818,7 +950,7 @@
      "name": "carry_clip",
      "type": "IMAGE",
      "links": [
-      24
+      27
      ]
     }
    ],
@@ -837,7 +969,7 @@
    "type": "MiniMaxH3ImageToVideo",
    "pos": [
     585,
-    955
+    900
    ],
    "size": [
     400,
@@ -846,40 +978,40 @@
    "flags": {
     "collapsed": true
    },
-   "order": 17,
+   "order": 20,
    "mode": 0,
    "inputs": [
     {
      "localized_name": "clip",
      "name": "clip",
      "type": "CLIP",
-     "link": 9
+     "link": 12
     },
     {
      "localized_name": "vae",
      "name": "vae",
      "type": "VAE",
-     "link": 10
+     "link": 13
     },
     {
      "localized_name": "first_frame",
      "name": "first_frame",
      "type": "IMAGE",
-     "link": 14,
+     "link": 17,
      "shape": 7
     },
     {
      "localized_name": "last_frame",
      "name": "last_frame",
      "type": "IMAGE",
-     "link": 15,
+     "link": 18,
      "shape": 7
     },
     {
      "localized_name": "prompt",
      "name": "prompt",
      "type": "STRING",
-     "link": 16,
+     "link": 19,
      "widget": {
       "name": "prompt"
      }
@@ -888,7 +1020,7 @@
      "localized_name": "width",
      "name": "width",
      "type": "INT",
-     "link": 17,
+     "link": 20,
      "widget": {
       "name": "width"
      }
@@ -897,7 +1029,7 @@
      "localized_name": "height",
      "name": "height",
      "type": "INT",
-     "link": 18,
+     "link": 21,
      "widget": {
       "name": "height"
      }
@@ -906,7 +1038,7 @@
      "localized_name": "length",
      "name": "length",
      "type": "INT",
-     "link": 19,
+     "link": 22,
      "widget": {
       "name": "length"
      }
@@ -918,7 +1050,7 @@
      "name": "positive",
      "type": "CONDITIONING",
      "links": [
-      20
+      23
      ]
     },
     {
@@ -926,8 +1058,8 @@
      "name": "LATENT",
      "type": "LATENT",
      "links": [
-      21,
-      33
+      24,
+      36
      ]
     }
    ],
@@ -937,8 +1069,8 @@
    },
    "widgets_values": [
     "",
-    768,
-    768,
+    544,
+    544,
     124
    ]
   },
@@ -947,7 +1079,7 @@
    "type": "MiniMaxH3AddGuide",
    "pos": [
     585,
-    1010
+    955
    ],
    "size": [
     400,
@@ -956,47 +1088,47 @@
    "flags": {
     "collapsed": true
    },
-   "order": 18,
+   "order": 21,
    "mode": 0,
    "inputs": [
     {
      "localized_name": "positive",
      "name": "positive",
      "type": "CONDITIONING",
-     "link": 20
+     "link": 23
     },
     {
      "localized_name": "latent",
      "name": "latent",
      "type": "LATENT",
-     "link": 21
+     "link": 24
     },
     {
      "localized_name": "vae",
      "name": "vae",
      "type": "VAE",
-     "link": 22,
+     "link": 25,
      "shape": 7
     },
     {
      "localized_name": "audio_vae",
      "name": "audio_vae",
      "type": "VAE",
-     "link": 23,
+     "link": 26,
      "shape": 7
     },
     {
      "localized_name": "image",
      "name": "image",
      "type": "IMAGE",
-     "link": 24,
+     "link": 27,
      "shape": 7
     },
     {
      "localized_name": "audio",
      "name": "audio",
      "type": "AUDIO",
-     "link": 25,
+     "link": 28,
      "shape": 7
     }
    ],
@@ -1006,7 +1138,7 @@
      "name": "positive",
      "type": "CONDITIONING",
      "links": [
-      27
+      30
      ]
     }
    ],
@@ -1033,20 +1165,20 @@
    "flags": {
     "collapsed": true
    },
-   "order": 19,
+   "order": 22,
    "mode": 0,
    "inputs": [
     {
      "localized_name": "model",
      "name": "model",
      "type": "MODEL",
-     "link": 26
+     "link": 29
     },
     {
      "localized_name": "conditioning",
      "name": "conditioning",
      "type": "CONDITIONING",
-     "link": 27
+     "link": 30
     }
    ],
    "outputs": [
@@ -1055,7 +1187,7 @@
      "name": "GUIDER",
      "type": "GUIDER",
      "links": [
-      30
+      33
      ]
     }
    ],
@@ -1078,7 +1210,7 @@
    "flags": {
     "collapsed": true
    },
-   "order": 20,
+   "order": 23,
    "mode": 0,
    "inputs": [],
    "outputs": [
@@ -1087,7 +1219,7 @@
      "name": "NOISE",
      "type": "NOISE",
      "links": [
-      29
+      32
      ]
     }
    ],
@@ -1114,7 +1246,7 @@
    "flags": {
     "collapsed": true
    },
-   "order": 21,
+   "order": 24,
    "mode": 0,
    "inputs": [],
    "outputs": [
@@ -1123,7 +1255,7 @@
      "name": "SAMPLER",
      "type": "SAMPLER",
      "links": [
-      31
+      34
      ]
     }
    ],
@@ -1149,14 +1281,14 @@
    "flags": {
     "collapsed": true
    },
-   "order": 22,
+   "order": 25,
    "mode": 0,
    "inputs": [
     {
      "localized_name": "model",
      "name": "model",
      "type": "MODEL",
-     "link": 28
+     "link": 31
     }
    ],
    "outputs": [
@@ -1165,7 +1297,7 @@
      "name": "SIGMAS",
      "type": "SIGMAS",
      "links": [
-      32
+      35
      ]
     }
    ],
@@ -1193,38 +1325,38 @@
    "flags": {
     "collapsed": true
    },
-   "order": 23,
+   "order": 26,
    "mode": 0,
    "inputs": [
     {
      "localized_name": "noise",
      "name": "noise",
      "type": "NOISE",
-     "link": 29
+     "link": 32
     },
     {
      "localized_name": "guider",
      "name": "guider",
      "type": "GUIDER",
-     "link": 30
+     "link": 33
     },
     {
      "localized_name": "sampler",
      "name": "sampler",
      "type": "SAMPLER",
-     "link": 31
+     "link": 34
     },
     {
      "localized_name": "sigmas",
      "name": "sigmas",
      "type": "SIGMAS",
-     "link": 32
+     "link": 35
     },
     {
      "localized_name": "latent_image",
      "name": "latent_image",
      "type": "LATENT",
-     "link": 33
+     "link": 36
     }
    ],
    "outputs": [
@@ -1233,7 +1365,7 @@
      "name": "output",
      "type": "LATENT",
      "links": [
-      34
+      37
      ]
     },
     {
@@ -1262,20 +1394,20 @@
    "flags": {
     "collapsed": true
    },
-   "order": 24,
+   "order": 27,
    "mode": 0,
    "inputs": [
     {
      "localized_name": "samples",
      "name": "samples",
      "type": "LATENT",
-     "link": 34
+     "link": 37
     },
     {
      "localized_name": "vae",
      "name": "vae",
      "type": "VAE",
-     "link": 35
+     "link": 38
     }
    ],
    "outputs": [
@@ -1284,7 +1416,7 @@
      "name": "IMAGE",
      "type": "IMAGE",
      "links": [
-      36
+      39
      ]
     }
    ],
@@ -1302,36 +1434,36 @@
    ],
    "size": [
     400,
-    310
+    340
    ],
    "flags": {},
-   "order": 25,
+   "order": 28,
    "mode": 0,
    "inputs": [
     {
      "localized_name": "images",
      "name": "images",
      "type": "IMAGE",
-     "link": 36
+     "link": 39
     },
     {
      "localized_name": "original_audio",
      "name": "original_audio",
      "type": "AUDIO",
-     "link": 37
+     "link": 40
     },
     {
      "localized_name": "chunk_audio",
      "name": "chunk_audio",
      "type": "AUDIO",
-     "link": 38,
+     "link": 41,
      "shape": 7
     },
     {
      "localized_name": "chunk_index",
      "name": "chunk_index",
      "type": "INT",
-     "link": 39,
+     "link": 42,
      "widget": {
       "name": "chunk_index"
      }
@@ -1340,7 +1472,7 @@
      "localized_name": "total_chunks",
      "name": "total_chunks",
      "type": "INT",
-     "link": 40,
+     "link": 43,
      "widget": {
       "name": "total_chunks"
      }
@@ -1349,7 +1481,7 @@
      "localized_name": "keep_frames",
      "name": "keep_frames",
      "type": "INT",
-     "link": 41,
+     "link": 44,
      "widget": {
       "name": "keep_frames"
      }
@@ -1358,7 +1490,7 @@
      "localized_name": "session",
      "name": "session",
      "type": "STRING",
-     "link": 43,
+     "link": 46,
      "widget": {
       "name": "session"
      }
@@ -1367,7 +1499,7 @@
      "localized_name": "filename",
      "name": "filename",
      "type": "STRING",
-     "link": 44,
+     "link": 47,
      "widget": {
       "name": "filename"
      }
@@ -1376,7 +1508,7 @@
      "localized_name": "trim_start",
      "name": "trim_start",
      "type": "INT",
-     "link": 42,
+     "link": 45,
      "widget": {
       "name": "trim_start"
      },
@@ -1400,55 +1532,10 @@
     0,
     1,
     123,
-    "run1_fast",
-    "h3_fast_final.mp4",
+    "run1_draft_v2",
+    "h3_draft_v2.mp4",
     true,
     0
-   ]
-  },
-  {
-   "id": 75,
-   "type": "MiniMaxH3SigmaShift",
-   "pos": [
-    25,
-    900
-   ],
-   "size": [
-    300,
-    110
-   ],
-   "flags": {
-    "collapsed": true
-   },
-   "order": 26,
-   "mode": 0,
-   "inputs": [
-    {
-     "localized_name": "model",
-     "name": "model",
-     "type": "MODEL",
-     "link": 45
-    }
-   ],
-   "outputs": [
-    {
-     "localized_name": "MODEL",
-     "name": "MODEL",
-     "type": "MODEL",
-     "links": [
-      26,
-      28
-     ]
-    }
-   ],
-   "properties": {
-    "Node name for S&R": "MiniMaxH3SigmaShift",
-    "cnr_id": "comfy-core"
-   },
-   "title": "Fast sigma shift (video 6 / audio 3)",
-   "widgets_values": [
-    6.0,
-    3.0
    ]
   }
  ],
@@ -1472,18 +1559,18 @@
   [
    3,
    20,
-   5,
-   31,
+   1,
+   30,
    0,
-   "STRING"
+   "INT"
   ],
   [
    4,
+   20,
+   7,
    30,
-   0,
-   31,
    1,
-   "STRING"
+   "INT"
   ],
   [
    5,
@@ -1495,6 +1582,30 @@
   ],
   [
    6,
+   41,
+   0,
+   75,
+   0,
+   "MODEL"
+  ],
+  [
+   7,
+   75,
+   0,
+   76,
+   0,
+   "MODEL"
+  ],
+  [
+   8,
+   76,
+   0,
+   77,
+   0,
+   "MODEL"
+  ],
+  [
+   9,
    10,
    0,
    50,
@@ -1502,7 +1613,7 @@
    "IMAGE"
   ],
   [
-   7,
+   10,
    13,
    0,
    50,
@@ -1510,7 +1621,7 @@
    "INT"
   ],
   [
-   8,
+   11,
    14,
    0,
    50,
@@ -1518,7 +1629,7 @@
    "INT"
   ],
   [
-   9,
+   12,
    42,
    0,
    51,
@@ -1526,7 +1637,7 @@
    "CLIP"
   ],
   [
-   10,
+   13,
    43,
    0,
    51,
@@ -1534,7 +1645,7 @@
    "VAE"
   ],
   [
-   11,
+   14,
    50,
    0,
    53,
@@ -1542,7 +1653,7 @@
    "IMAGE"
   ],
   [
-   12,
+   15,
    12,
    0,
    53,
@@ -1550,7 +1661,7 @@
    "INT"
   ],
   [
-   13,
+   16,
    20,
    7,
    53,
@@ -1558,7 +1669,7 @@
    "INT"
   ],
   [
-   14,
+   17,
    53,
    0,
    51,
@@ -1566,7 +1677,7 @@
    "IMAGE"
   ],
   [
-   15,
+   18,
    50,
    0,
    51,
@@ -1574,15 +1685,15 @@
    "IMAGE"
   ],
   [
-   16,
-   31,
+   19,
+   30,
    0,
    51,
    4,
    "STRING"
   ],
   [
-   17,
+   20,
    13,
    0,
    51,
@@ -1590,7 +1701,7 @@
    "INT"
   ],
   [
-   18,
+   21,
    14,
    0,
    51,
@@ -1598,7 +1709,7 @@
    "INT"
   ],
   [
-   19,
+   22,
    20,
    1,
    51,
@@ -1606,7 +1717,7 @@
    "INT"
   ],
   [
-   20,
+   23,
    51,
    0,
    52,
@@ -1614,7 +1725,7 @@
    "CONDITIONING"
   ],
   [
-   21,
+   24,
    51,
    1,
    52,
@@ -1622,7 +1733,7 @@
    "LATENT"
   ],
   [
-   22,
+   25,
    43,
    0,
    52,
@@ -1630,7 +1741,7 @@
    "VAE"
   ],
   [
-   23,
+   26,
    44,
    0,
    52,
@@ -1638,7 +1749,7 @@
    "VAE"
   ],
   [
-   24,
+   27,
    53,
    1,
    52,
@@ -1646,7 +1757,7 @@
    "IMAGE"
   ],
   [
-   25,
+   28,
    20,
    6,
    52,
@@ -1654,15 +1765,15 @@
    "AUDIO"
   ],
   [
-   26,
-   75,
+   29,
+   77,
    0,
    60,
    0,
    "MODEL"
   ],
   [
-   27,
+   30,
    52,
    0,
    60,
@@ -1670,15 +1781,15 @@
    "CONDITIONING"
   ],
   [
-   28,
-   75,
+   31,
+   77,
    0,
    63,
    0,
    "MODEL"
   ],
   [
-   29,
+   32,
    61,
    0,
    64,
@@ -1686,7 +1797,7 @@
    "NOISE"
   ],
   [
-   30,
+   33,
    60,
    0,
    64,
@@ -1694,7 +1805,7 @@
    "GUIDER"
   ],
   [
-   31,
+   34,
    62,
    0,
    64,
@@ -1702,7 +1813,7 @@
    "SAMPLER"
   ],
   [
-   32,
+   35,
    63,
    0,
    64,
@@ -1710,7 +1821,7 @@
    "SIGMAS"
   ],
   [
-   33,
+   36,
    51,
    1,
    64,
@@ -1718,7 +1829,7 @@
    "LATENT"
   ],
   [
-   34,
+   37,
    64,
    0,
    65,
@@ -1726,7 +1837,7 @@
    "LATENT"
   ],
   [
-   35,
+   38,
    43,
    0,
    65,
@@ -1734,7 +1845,7 @@
    "VAE"
   ],
   [
-   36,
+   39,
    65,
    0,
    70,
@@ -1742,7 +1853,7 @@
    "IMAGE"
   ],
   [
-   37,
+   40,
    11,
    0,
    70,
@@ -1750,7 +1861,7 @@
    "AUDIO"
   ],
   [
-   38,
+   41,
    20,
    0,
    70,
@@ -1758,7 +1869,7 @@
    "AUDIO"
   ],
   [
-   39,
+   42,
    12,
    0,
    70,
@@ -1766,7 +1877,7 @@
    "INT"
   ],
   [
-   40,
+   43,
    20,
    3,
    70,
@@ -1774,7 +1885,7 @@
    "INT"
   ],
   [
-   41,
+   44,
    20,
    2,
    70,
@@ -1782,7 +1893,7 @@
    "INT"
   ],
   [
-   42,
+   45,
    20,
    7,
    70,
@@ -1790,7 +1901,7 @@
    "INT"
   ],
   [
-   43,
+   46,
    21,
    0,
    70,
@@ -1798,31 +1909,23 @@
    "STRING"
   ],
   [
-   44,
+   47,
    21,
    1,
    70,
    7,
    "STRING"
-  ],
-  [
-   45,
-   41,
-   0,
-   75,
-   0,
-   "MODEL"
   ]
  ],
  "groups": [
   {
    "id": 1,
-   "title": "Models - loaded automatically",
+   "title": "Models + acceleration - loaded automatically",
    "bounding": [
     0,
     730,
     530,
-    420
+    520
    ],
    "color": "#355563",
    "font_size": 22,
@@ -1835,7 +1938,7 @@
     560,
     730,
     530,
-    420
+    520
    ],
    "color": "#4a5568",
    "font_size": 22,
@@ -1843,12 +1946,12 @@
   },
   {
    "id": 3,
-   "title": "Four-step sampling + decode",
+   "title": "Sampling + decode",
    "bounding": [
     1120,
     730,
     530,
-    420
+    520
    ],
    "color": "#4c566a",
    "font_size": 22,

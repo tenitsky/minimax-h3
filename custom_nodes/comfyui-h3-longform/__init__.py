@@ -219,6 +219,73 @@ def gen_length(keep, is_last, carry=0):
     return carry + keep + 1
 
 
+def alignment_line(length, carry):
+    """The first prompt line, verbatim from MiniMax's prompt guide.
+
+    The text encoder labels the pictures it is shown "<Picture 1>", "<Picture 2>" in
+    connection order. Without carry both portraits are shown, so this is the FL2VA
+    instruction. With carry the first frame is a guide clip the encoder never sees,
+    only the last portrait, which is the guide's L2VA instruction.
+    """
+    end_mark = f"{(length - 1) / FPS:.2f}"
+    if carry:
+        return ("How the reference pictures align with the target video — <Picture 1> "
+                f"(from [Shot 1]) aligns with the {end_mark}-second mark of the target video.")
+    return ("How the reference pictures align with the target video — Picture 1 (from "
+            "Shot 1) aligns with the 0.00-second mark of the target video; Picture 2 (from "
+            f"Shot 1) aligns with the {end_mark}-second mark of the target video.")
+
+
+DEFAULT_SUBJECT = "the person shown in the reference picture"
+DEFAULT_BACKGROUND = "the background shown in the reference picture"
+DEFAULT_DELIVERY = "a clear, calm, natural voice"
+
+
+def talking_head_prompt(length, carry, subject="", background="", delivery="", extra=""):
+    """A complete single-shot H3 prompt for a locked-off talking head.
+
+    Follows the guide's structure: instruction line, then exactly three fields. The
+    body names what stays fixed in concrete terms - the model drifts toward whatever
+    the text leaves open, and a bare "presenter" pulls in broadcast graphics.
+    """
+    subject = " ".join((subject or "").split()) or DEFAULT_SUBJECT
+    background = " ".join((background or "").split()) or DEFAULT_BACKGROUND
+    delivery = " ".join((delivery or "").split()) or DEFAULT_DELIVERY
+    if carry:
+        start = (f"[Shot 1] Live-action, a static shot continuing seamlessly from the provided "
+                 f"opening frames: {subject} is already mid-sentence, with the same framing, "
+                 "lighting and background as those frames.")
+        end = ("Toward the end of the shot the person settles into the pose, expression and "
+               "composition established by <Picture 1>.")
+    else:
+        start = (f"[Shot 1] Live-action, a static shot of {subject}, beginning in the exact "
+                 "pose, framing, lighting and background established by Picture 1.")
+        end = ("Toward the end of the shot the person settles back into the pose, expression "
+               "and composition established by Picture 2.")
+    body = [
+        start,
+        "The camera holds a static shot on a locked-off tripod for the entire shot, with no "
+        "change in framing, focus or exposure.",
+        f"The person (S1) speaks directly to the camera in {delivery}, lips moving in exact "
+        "sync with the speech, with natural blinking, small eyebrow movements and gentle head "
+        "nods, while the shoulders and body stay in place.",
+        f"Behind the person, {background} stays completely unchanged throughout: the same "
+        "objects in the same places, the same colours and the same lighting.",
+        "The frame contains only this one person in front of this background from the first "
+        "frame to the last; no other person, object, text, caption, logo, watermark or "
+        "on-screen graphic appears at any point.",
+    ]
+    extra = " ".join((extra or "").split())
+    if extra:
+        body.append(extra)
+    body.append(end)
+    return (alignment_line(length, carry) + "\n\n"
+            + "integrated_multimodal_description: " + " ".join(body) + "\n\n"
+            + "overall_soundscape: A quiet, steady room tone sits under the voice, with no "
+              "other sounds.\n\n"
+            + "non_diegetic_music: N/A")
+
+
 def _prompt_nodes(prompt, class_type):
     if not isinstance(prompt, dict):
         return
@@ -449,19 +516,9 @@ class H3LongformSplit:
         guide = audio_slice(start - carry, start + keep)
         chunk_audio = audio_slice(start, start + keep) if carry else guide
 
-        # FL2VA prompts state where each reference picture lands (MiniMax prompt
-        # guide). With a lead-in there is no first picture, only the last one.
-        end_mark = f"{(length - 1) / FPS:.2f}"
-        if carry:
-            alignment = ("How the reference pictures align with the target video - "
-                         f"Picture 1 (from Shot 1) aligns with the {end_mark}-second "
-                         "mark of the target video. The video opens mid-motion, "
-                         "continuing seamlessly from the provided opening frames.")
-        else:
-            alignment = ("How the reference pictures align with the target video - "
-                         "Picture 1 (from Shot 1) aligns with the 0.00-second mark "
-                         "of the target video; Picture 2 (from Shot 1) aligns with "
-                         f"the {end_mark}-second mark of the target video.")
+        # Kept for graphs built before H3LongformPrompt, which wire it ahead of a
+        # hand-written prompt. With a lead-in there is only the last picture.
+        alignment = alignment_line(length, carry)
 
         print(f"{LOG} chunk {idx + 1}/{len(spans)}  {start / FPS:.2f}s "
               f"+{keep / FPS:.2f}s  (generate {length} = lead-in {carry} + keep "
@@ -696,6 +753,54 @@ class H3LongformWrite:
         return (msg,)
 
 
+class H3LongformPrompt:
+    """Build each chunk's full prompt from a few plain descriptions.
+
+    The alignment line changes with every chunk's length and with motion carry, and
+    the body has to name the pictures the same way, so the whole prompt is generated
+    here rather than typed.
+    """
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "length": ("INT", {"default": 124, "min": 5, "max": 3600,
+                                   "tooltip": "Wire from Split's length."}),
+                "carry_frames": ("INT", {"default": 0, "min": 0, "max": 22,
+                                         "tooltip": "Wire from Split's carry_frames."}),
+                "subject": ("STRING", {
+                    "multiline": True, "default": "",
+                    "tooltip": "Who is on screen, as seen in the portrait: e.g. 'a woman in "
+                               "her thirties with shoulder-length brown hair, wearing a navy "
+                               "blazer over a white shirt'. Blank uses a generic description."}),
+                "background": ("STRING", {
+                    "multiline": True, "default": "",
+                    "tooltip": "What is behind them, concretely: e.g. 'a plain light-grey "
+                               "wall with soft even lighting'. Naming it is what keeps it "
+                               "from changing. Blank uses a generic description."}),
+                "delivery": ("STRING", {
+                    "default": DEFAULT_DELIVERY,
+                    "tooltip": "How they speak, completing 'speaks to the camera in ...'."}),
+            },
+            "optional": {
+                "extra": ("STRING", {
+                    "multiline": True, "default": "",
+                    "tooltip": "Optional extra sentence for the shot, e.g. 'She smiles "
+                               "briefly between sentences.' Keep motion small."}),
+            },
+        }
+
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("prompt",)
+    FUNCTION = "build"
+    CATEGORY = "H3 Longform"
+
+    def build(self, length, carry_frames, subject, background, delivery, extra=""):
+        return (talking_head_prompt(length, carry_frames, subject, background, delivery,
+                                    extra),)
+
+
 class H3LongformAudioName:
     """Turn the loaded audio's filename into strings for session and output name."""
 
@@ -742,6 +847,7 @@ NODE_CLASS_MAPPINGS = {
     "H3LongformCarry": H3LongformCarry,
     "H3LongformWrite": H3LongformWrite,
     "H3LongformAudioName": H3LongformAudioName,
+    "H3LongformPrompt": H3LongformPrompt,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -749,6 +855,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "H3LongformCarry": "H3 Longform: Opening (portrait or motion carry)",
     "H3LongformWrite": "H3 Longform: Write + Stitch",
     "H3LongformAudioName": "H3 Longform: Name From Audio File",
+    "H3LongformPrompt": "H3 Longform: Talking-Head Prompt",
 }
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]

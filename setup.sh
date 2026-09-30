@@ -84,6 +84,8 @@ export HF_HOME="${HF_HOME:-/workspace/.cache/huggingface}"
 HF_REPO="Comfy-Org/MiniMax-H3"
 # Same files, same layout, published by Comfy-Org on ModelScope. Used only if HF fails.
 MS_BASE="https://modelscope.cn/models/Comfy-Org/MiniMax-H3/resolve/master"
+# The Turbo LoRA authors (ModelTC / LightX2V). Hosts the 8-step 768p LoRA.
+TURBO_REPO="lightx2v/Minimax-h3-Turbo"
 
 H3_TEXT_ENCODER="${H3_TEXT_ENCODER:-nvfp4}"
 DOWNLOAD_TURBO_LORA="${DOWNLOAD_TURBO_LORA:-1}"
@@ -182,12 +184,12 @@ PY
 }
 
 hf_fast() {
-  # $1 = destination file, $2 = path inside the repo
-  local dest="$1" rpath="$2" tmp
+  # $1 = destination file, $2 = path inside the repo, $3 = repo (default HF_REPO)
+  local dest="$1" rpath="$2" repo="${3:-$HF_REPO}" tmp
   [ -n "$HF_BIN" ] || return 1
   # Stage beside the destination so the final move is a rename, not a 20GB copy.
   tmp="$(mktemp -d "$(dirname "$dest")/.hfdl.XXXXXX")" || return 1
-  if HF_XET_HIGH_PERFORMANCE=1 "$HF_BIN" download "$HF_REPO" "$rpath" --local-dir "$tmp"; then
+  if HF_XET_HIGH_PERFORMANCE=1 "$HF_BIN" download "$repo" "$rpath" --local-dir "$tmp"; then
     file_ok "$tmp/$rpath" && mv -f "$tmp/$rpath" "$dest"
   fi
   rm -rf "$tmp"
@@ -210,17 +212,21 @@ fetch_url() {
 
 download_local() {
   # $1 = path inside the repo, e.g. vae/minimax_h3_audio_vae_fp32.safetensors
-  local rpath="$1" dest="$2" fname
+  # $3 = repo (default HF_REPO), $4 = ModelScope mirror base ("" when there is none)
+  local rpath="$1" dest="$2" repo="${3:-$HF_REPO}" ms="${4-$MS_BASE}" fname
   fname="$(basename "$rpath")"
   if file_ok "$dest"; then
     echo "$fname already exists, skipping."
     return 0
   fi
   echo "Downloading $fname ..."
-  hf_fast "$dest" "$rpath" && { echo "$fname done."; return 0; }
+  hf_fast "$dest" "$rpath" "$repo" && { echo "$fname done."; return 0; }
   echo "  falling back to wget..."
-  fetch_url "$dest" "https://huggingface.co/$HF_REPO/resolve/main/$rpath" hf || true
-  file_ok "$dest" || { echo "  trying the ModelScope mirror..."; fetch_url "$dest" "$MS_BASE/$rpath" ms || true; }
+  fetch_url "$dest" "https://huggingface.co/$repo/resolve/main/$rpath" hf || true
+  if [ -n "$ms" ] && ! file_ok "$dest"; then
+    echo "  trying the ModelScope mirror..."
+    fetch_url "$dest" "$ms/$rpath" ms || true
+  fi
   if ! file_ok "$dest"; then
     echo "ERROR: could not download $fname. Existing files were retained for retry."
     return 1
@@ -230,6 +236,11 @@ download_local() {
 
 download_h3() {
   download_local "$1" "$COMFYUI_PATH/models/$1"
+}
+
+download_turbo() {
+  # LoRAs Comfy-Org has not repackaged, from the authors' repo (files at its root).
+  download_local "$1" "$COMFYUI_PATH/models/loras/$1" "$TURBO_REPO" ""
 }
 
 # -------------------------------------------------------------------
@@ -254,14 +265,16 @@ fi
 download_h3 "vae/minimax_h3_video_vae_int8_convrot.safetensors" || FAILED=1
 download_h3 "vae/minimax_h3_audio_vae_fp32.safetensors" || FAILED=1
 
-# Turbo LoRA: 8 steps instead of 20 (~2GB). The workflow has it switched on.
+# Turbo LoRAs (~2GB each). Each is distilled at one resolution and shift; the
+# workflows pair them accordingly (authors' table: ModelTC/Minimax-H3-Turbo).
+#   Standard   768p  8-step v1.0 768p  shift 6/3   (lightx2v repo only)
+#   Fast       768p  4-step v1.0 768p  shift 6/3
+#   Fast Draft 544p  8-step v1.0       shift 12/3, run at 4 steps (trained at 544p)
+download_turbo "minimax_h3_fl2v_turbo_8step_v1.0_768p_comfyui_bf16.safetensors" || FAILED=1
+download_h3 "loras/minimax_h3_fl2v_turbo_4step_v1.0_768p_comfyui_bf16.safetensors" || FAILED=1
 if [ "$DOWNLOAD_TURBO_LORA" = "1" ]; then
   download_h3 "loras/minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors" || FAILED=1
 fi
-
-# The separate Fast workflow uses the dedicated four-step 768p LoRA (~2GB).
-# Its graph also sets the required video/audio sigma shifts to 6/3.
-download_h3 "loras/minimax_h3_fl2v_turbo_4step_v1.0_768p_comfyui_bf16.safetensors" || FAILED=1
 
 # OPTIONAL: Ref2VA model (~21GB) for ComfyUI's own "Reference to Video" template.
 # Not used by the bundled workflow.

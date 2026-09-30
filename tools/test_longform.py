@@ -85,9 +85,45 @@ class LongformTests(unittest.TestCase):
                         pos += keep
                     self.assertEqual(pos, total)
 
+    def test_prompt_follows_minimax_guide_format(self):
+        # FL2VA / L2VA instruction line first, one blank line, then the three fields.
+        fields = ("integrated_multimodal_description: [Shot 1] ", "overall_soundscape: ",
+                  "non_diegetic_music: N/A")
+        for carry in (0, 5, 22):
+            with self.subTest(carry=carry):
+                keep = h3.keep_grid(5, 10, carry)[-1]
+                length = h3.gen_length(keep, False, carry)
+                text = h3.talking_head_prompt(length, carry, "a man in a grey suit",
+                                              "a plain white wall", "")
+                parts = text.split("\n\n")
+                self.assertEqual(parts[0], h3.alignment_line(length, carry))
+                self.assertEqual(len(parts), 4)
+                for part, field in zip(parts[1:], fields):
+                    self.assertTrue(part.startswith(field), part[:60])
+                end = f"{(length - 1) / 24:.2f}-second mark"
+                self.assertIn(end, parts[0])
+                self.assertIn("—", parts[0])
+                self.assertIn("a plain white wall", text)
+                self.assertIn(h3.DEFAULT_DELIVERY, text)
+                self.assertNotIn("presenter", text.lower())
+                if carry:
+                    # Only the last portrait is shown to the text encoder.
+                    self.assertIn("<Picture 1> (from [Shot 1])", parts[0])
+                    self.assertNotIn("Picture 2", text)
+                else:
+                    self.assertIn("Picture 1 (from Shot 1) aligns with the 0.00-second", parts[0])
+                    self.assertIn("established by Picture 2.", text)
+        blank = h3.H3LongformPrompt().build(124, 0, "  ", "", "")[0]
+        self.assertIn(h3.DEFAULT_SUBJECT, blank)
+        self.assertIn(h3.DEFAULT_BACKGROUND, blank)
+
     def test_workflow_carry_connections_and_schemas(self):
-        wf = builder.build()
-        self.assertEqual(wf, json.loads((ROOT / "workflows/minimax_h3_long_video_workflow.json").read_text(encoding="utf-8")))
+        for name, variant in builder.VARIANTS.items():
+            with self.subTest(variant=name):
+                self.check_workflow(builder.build(name), variant["path"])
+
+    def check_workflow(self, wf, filename):
+        self.assertEqual(wf, json.loads((ROOT / "workflows" / filename).read_text(encoding="utf-8")))
         nodes = {n["id"]: n for n in wf["nodes"]}
         links = {}
         for lid, src, slot, dst, port, kind in wf["links"]:
@@ -102,7 +138,8 @@ class LongformTests(unittest.TestCase):
             (52, "image"): (53, 1), (52, "audio"): (20, 6),
             (52, "vae"): (43, 0), (53, "carry_frames"): (20, 7),
             (70, "trim_start"): (20, 7), (70, "chunk_audio"): (20, 0),
-            (70, "original_audio"): (11, 0),
+            (70, "original_audio"): (11, 0), (51, "prompt"): (30, 0),
+            (30, "length"): (20, 1), (30, "carry_frames"): (20, 7),
         }.items():
             self.assertEqual(links[dest], source)
         for node in nodes.values():

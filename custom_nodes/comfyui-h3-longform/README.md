@@ -1,6 +1,6 @@
 # H3 Longform
 
-Four nodes that turn one portrait and a long voiceover into a talking-head video with
+Five nodes that turn one portrait and a long voiceover into a talking-head video with
 MiniMax H3, using ComfyUI's batch queue as the loop. They're ported from the LTX
 Longform pack. No dependencies beyond ffmpeg.
 
@@ -14,19 +14,21 @@ item to the next.
 | **H3 Longform: Opening (portrait or motion carry)** | Returns the portrait on chunk 0 or with carry off; otherwise loads the previous chunk's tail as a guide clip |
 | **H3 Longform: Write + Stitch** | Writes the chunk as an mp4. On the last chunk it concatenates them all and muxes in the original track |
 | **H3 Longform: Name From Audio File** | Names the session and output after the Load Audio file |
+| **H3 Longform: Talking-Head Prompt** | Writes each chunk's full prompt in MiniMax's format from short `subject`, `background` and `delivery` descriptions, with the alignment line for that chunk's length and carry |
 
 The name node's optional `name_suffix` is appended to both names. The bundled
-`minimax_h3_fast_workflow` sets `_fast`, keeping its four-step renders separate
-from the standard workflow's chunks. Change it when starting a new take with
+workflows set `_v2`, `_fast_v2` and `_draft_v2`, keeping each one's chunks separate
+from the others and from renders made with earlier workflows. Change it when starting a new take with
 different inputs or settings. Existing workflows default to an empty suffix.
 
-## Wiring (already done in `minimax_h3_long_video_workflow`)
+## Wiring (already done in the bundled `_v2` workflows)
 
 - Split `audio_chunk` → Write `chunk_audio`
 - Split `guide_audio` → `MiniMaxH3AddGuide.audio` (frame_idx 0), including the carry lead-in
 - Split `carry_frames` → Carry `carry_frames` and Write `trim_start`
 - Split `length` → `MiniMaxH3ImageToVideo.length`
-- Split `alignment` + your prompt → `MiniMaxH3ImageToVideo.prompt`
+- Split `length` and `carry_frames` → Talking-Head Prompt; its `prompt` → `MiniMaxH3ImageToVideo.prompt`
+  (Split's `alignment` output is kept for older graphs that prepend it to a typed prompt)
 - The cropped portrait goes to Carry `portrait` and H3 `last_frame`
 - Carry `first_frame` → H3 `first_frame`; Carry `carry_clip` → Add Guide `image`
 - Connect the video VAE to Add Guide `vae`, and the audio VAE to `audio_vae`

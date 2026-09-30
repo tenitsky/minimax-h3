@@ -1,4 +1,4 @@
-"""CPU checks for Fast and Fast Draft graphs, sampling settings, and model setup."""
+"""CPU checks for the standard, Fast and Fast Draft graphs, sampling settings, and model setup."""
 from collections import deque
 import importlib.util
 import json
@@ -19,12 +19,15 @@ FAST_LORA = "minimax_h3_fl2v_turbo_4step_v1.0_768p_comfyui_bf16.safetensors"
 
 class FastWorkflowTests(unittest.TestCase):
     builder_function = "build_fast"
-    workflow_filename = "minimax_h3_fast_workflow.json"
+    workflow_filename = "minimax_h3_fast_v2.json"
     lora_filename = FAST_LORA
+    lora_url = builder.HF + "loras/"
     video_shift = 6.0
+    steps = 4
+    sparse_enabled = True
     canvas = 768
-    name_suffix = "_fast"
-    fallback_names = ["run1_fast", "h3_fast_final.mp4"]
+    name_suffix = "_fast_v2"
+    fallback_names = ["run1_fast_v2", "h3_fast_v2.mp4"]
 
     def setUp(self):
         self.workflow = getattr(builder, self.builder_function)()
@@ -50,9 +53,10 @@ class FastWorkflowTests(unittest.TestCase):
     def test_shipped_workflow_matches_builder(self):
         path = ROOT / "workflows" / self.workflow_filename
         self.assertEqual(json.loads(path.read_text(encoding="utf-8")), self.workflow)
-        self.assertNotEqual(self.workflow["id"], builder.build()["id"])
-        if self.builder_function != "build_fast":
-            self.assertNotEqual(self.workflow["id"], builder.build_fast()["id"])
+        ids = {builder.build(name)["id"] for name in builder.VARIANTS}
+        self.assertEqual(len(ids), len(builder.VARIANTS), "Workflow IDs must differ")
+        shipped = {p.name for p in (ROOT / "workflows").glob("*.json")}
+        self.assertEqual(shipped, {v["path"] for v in builder.VARIANTS.values()})
 
     def test_all_links_are_live_reciprocal_typed_and_acyclic(self):
         self.assertEqual(len(self.nodes), len(self.workflow["nodes"]), "Duplicate node IDs")
@@ -108,28 +112,56 @@ class FastWorkflowTests(unittest.TestCase):
         self.assertEqual(ancestors, {nid for nid, node in self.nodes.items()
                                      if node["type"] != "MarkdownNote"})
 
-    def test_four_step_lora_and_shifted_model_reach_scheduler_and_guider(self):
+    def assert_model_path(self):
+        """LoRA -> its trained shift -> the sampling model; returns the shift node."""
         model = self.node("UNETLoader")
         lora = self.node("LoraLoaderModelOnly")
         shift = self.node("MiniMaxH3SigmaShift")
+        self.assertEqual(lora["widgets_values"], [self.lora_filename, 1])
+        self.assertEqual(shift["widgets_values"], [self.video_shift, 3.0])
+        self.assert_source(lora, "model", model, "MODEL")
+        self.assert_source(shift, "model", lora, "MODEL")
+        return shift
+
+    def test_lora_shift_and_accelerated_model_reach_scheduler_and_guider(self):
+        shift = self.assert_model_path()
+        backend = self.node("ModelAttentionBackend")
+        sparse = self.node("BlockSparseAttention")
         guider = self.node("BasicGuider")
         scheduler = self.node("BasicScheduler")
         sampler = self.node("KSamplerSelect")
         sampling = self.node("SamplerCustomAdvanced")
-        self.assertEqual(lora["widgets_values"], [self.lora_filename, 1])
-        self.assertEqual(shift["widgets_values"], [self.video_shift, 3.0])
         self.assertEqual(sampler["widgets_values"], ["euler"])
-        self.assertEqual(scheduler["widgets_values"], ["simple", 4, 1])
+        self.assertEqual(scheduler["widgets_values"], ["simple", self.steps, 1])
         self.assertFalse(any(inp["name"] == "steps" for inp in scheduler["inputs"]),
                          "Fast steps must not be overridden by a linked switch")
         self.assertFalse(any(n["type"] == "ComfySwitchNode" for n in self.nodes.values()))
-        self.assert_source(lora, "model", model, "MODEL")
-        self.assert_source(shift, "model", lora, "MODEL")
-        self.assert_source(guider, "model", shift, "MODEL")
-        self.assert_source(scheduler, "model", shift, "MODEL")
+        self.assert_source(backend, "model", shift, "MODEL")
+        self.assert_source(guider, "model", sparse, "model")
+        self.assert_source(scheduler, "model", sparse, "model")
         self.assert_source(sampling, "guider", guider, "GUIDER")
         self.assert_source(sampling, "sigmas", scheduler, "SIGMAS")
         self.assert_source(sampling, "sampler", sampler, "SAMPLER")
+
+    def test_acceleration_settings(self):
+        backend = self.node("ModelAttentionBackend")
+        sparse = self.node("BlockSparseAttention")
+        self.assertEqual(backend["widgets_values"], ["comfy kitchen attention"])
+        self.assert_source(sparse, "model", backend, "model")
+        self.assertEqual(sparse["widgets_values"][0], "sol-attn")
+        # Pinned portraits, text and voiceover stay exact for every query.
+        self.assertEqual(sparse["widgets_values"][7], "exact_kv_and_rows")
+        self.assertEqual(sparse["mode"], 0 if self.sparse_enabled else 4)
+
+    def test_generated_prompt_follows_chunk_plan(self):
+        prompt = self.node("H3LongformPrompt")
+        split = self.node("H3LongformSplit")
+        image_to_video = self.node("MiniMaxH3ImageToVideo")
+        self.assert_source(image_to_video, "prompt", prompt, "prompt")
+        self.assert_source(prompt, "length", split, "length")
+        self.assert_source(prompt, "carry_frames", split, "carry_frames")
+        self.assertFalse(split["outputs"][5]["links"], "alignment is written by the prompt node")
+        self.assertEqual(split["widgets_values"][1:4], [8.0, 5.0, 10.0])
 
     def test_portrait_voiceover_carry_and_stitch_paths_are_preserved(self):
         portrait = self.node("LoadImage")
@@ -200,7 +232,8 @@ class FastWorkflowTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="h3-fast-plan-") as directory:
             script = Path(directory) / "plan.sh"
             script.write_text("set -e\nH3_TEXT_ENCODER=nvfp4\nDOWNLOAD_TURBO_LORA=1\nDOWNLOAD_REF2VA=0\n"
-                              + "download_h3() { printf '%s\\n' \"$1\"; }\n" + plan,
+                              + "download_h3() { printf '%s\\n' \"$1\"; }\n"
+                              + "download_turbo() { printf 'loras/%s\\n' \"$1\"; }\n" + plan,
                               encoding="utf-8", newline="\n")
             result = subprocess.run([BASH, str(script)], capture_output=True, text=True, timeout=10)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -213,17 +246,50 @@ class FastWorkflowTests(unittest.TestCase):
         for node in self.nodes.values():
             for item in node["properties"].get("models", []):
                 self.assertEqual(node["widgets_values"][0], item["name"])
-                self.assertEqual(item["url"], builder.HF + item["directory"] + "/" + item["name"])
+                base = (self.lora_url if item["directory"] == "loras"
+                        else builder.HF + item["directory"] + "/")
+                self.assertEqual(item["url"], base + item["name"])
 
 
 class FastDraftWorkflowTests(FastWorkflowTests):
     builder_function = "build_fast_draft"
-    workflow_filename = "minimax_h3_fast_draft_workflow.json"
+    workflow_filename = "minimax_h3_fast_draft_v2.json"
     lora_filename = "minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors"
     video_shift = 12.0
     canvas = 544
-    name_suffix = "_fast_draft"
-    fallback_names = ["run1_fast_draft", "h3_fast_draft_final.mp4"]
+    name_suffix = "_draft_v2"
+    fallback_names = ["run1_draft_v2", "h3_draft_v2.mp4"]
+
+
+class StandardWorkflowTests(FastWorkflowTests):
+    builder_function = "build"
+    workflow_filename = "minimax_h3_long_video_v2.json"
+    lora_filename = "minimax_h3_fl2v_turbo_8step_v1.0_768p_comfyui_bf16.safetensors"
+    lora_url = builder.TURBO_HF
+    steps = 8
+    sparse_enabled = False
+    name_suffix = "_v2"
+    fallback_names = ["run1_v2", "h3_longform_v2.mp4"]
+
+    def test_lora_shift_and_accelerated_model_reach_scheduler_and_guider(self):
+        shift = self.assert_model_path()
+        model = self.node("UNETLoader")
+        backend = self.node("ModelAttentionBackend")
+        sparse = self.node("BlockSparseAttention")
+        scheduler = self.node("BasicScheduler")
+        switches = {self.source(n, "on_true")[0]["type"]: n for n in self.nodes.values()
+                    if n["type"] == "ComfySwitchNode"}
+        model_switch, step_switch = switches["MiniMaxH3SigmaShift"], switches["PrimitiveInt"]
+        # Turbo on: 768p LoRA at its trained 6/3 shift. Off: base model, default shift.
+        self.assert_source(model_switch, "on_true", shift, "MODEL")
+        self.assert_source(model_switch, "on_false", model, "MODEL")
+        self.assertEqual(self.source(step_switch, "on_true")[0]["widgets_values"], [8, "fixed"])
+        self.assertEqual(self.source(step_switch, "on_false")[0]["widgets_values"], [20, "fixed"])
+        self.assert_source(scheduler, "steps", step_switch, "output")
+        self.assert_source(backend, "model", model_switch, "output")
+        self.assert_source(self.node("BasicGuider"), "model", sparse, "model")
+        self.assert_source(scheduler, "model", sparse, "model")
+        self.assertEqual(self.node("KSamplerSelect")["widgets_values"], ["euler"])
 
 
 if __name__ == "__main__":

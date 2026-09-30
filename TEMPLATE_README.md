@@ -15,21 +15,20 @@ ComfyUI, its Python environment, models, uploads, workflows and render progress 
 - **Port 8188:** ComfyUI
 - **Port 8888:** JupyterLab
 
-First boot downloads **44 GB**. Wait for "Setup complete!" in logs. Models are reused on later boots.
+First boot downloads **46 GB**. Wait for "Setup complete!" in logs. Models are reused on later boots.
 
 Jupyter has no login by default. Anyone with its accessible URL can run commands. For login protection, set JUPYTER_NO_AUTH=0 and set JUPYTER_PASSWORD when deploying.
 
 ## Generate a video
 
 1. Open ComfyUI's Workflows sidebar.
-2. Select **minimax_h3_fast_draft_workflow**: 544 x 544, 4 steps.
+2. Select **minimax_h3_fast_v2** (768, 4 steps), **minimax_h3_fast_draft_v2** (544, 4 steps) or **minimax_h3_long_video_v2** (768, 8 steps).
 3. Load your portrait and voiceover.
-4. Test one chunk at batch count 1.
-5. Reset chunk_index to 0, then queue enough items for the audio: roughly audio seconds divided by 12, plus a margin.
+4. In **Talking-Head Prompt**, describe the person and background seen in the portrait. This keeps the background steady.
+5. Test one chunk at batch count 1.
+6. Reset chunk_index to 0, then queue roughly audio seconds divided by 8, plus a margin.
 
-The last chunk stitches the final video into ComfyUI/output. To resume, keep the same settings, reset chunk_index to 0 and queue again.
-
-Fast Draft trades detail for speed, with separate `_fast_draft` outputs. 768p Fast and standard workflows are included. Speed and quality need GPU testing. Motion carry: **5 or 22 frames**, default off. Use a new session when changing inputs or settings.
+The last chunk stitches the final video into ComfyUI/output. To resume, keep the same settings, reset chunk_index to 0 and queue again. Motion carry: **5 or 22 frames**, default off.
 
 ## Hardware and licence
 

@@ -10,42 +10,38 @@ ever loads it. Re-run after editing:
 
 Opening the result in ComfyUI and saving it again is fine - the UI adds sizes and
 cosmetic properties, but the wiring stays the same.
+
+All three variants share one graph. They differ only in the settings in VARIANTS,
+each taken from the Turbo LoRA authors' table (github.com/ModelTC/Minimax-H3-Turbo):
+a distilled LoRA only behaves at the resolution and sigma shift it was trained at.
 """
 
 import json
 import os
 
-OUT = os.path.join(os.path.dirname(__file__), "..", "workflows",
-                   "minimax_h3_long_video_workflow.json")
+WORKFLOWS = os.path.join(os.path.dirname(__file__), "..", "workflows")
 
 HF = "https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/"
+TURBO_HF = "https://huggingface.co/lightx2v/Minimax-h3-Turbo/resolve/main/"
 UNET = "minimax_h3_fl2va_pruned_int8_convrot.safetensors"
 TE = "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors"
 VIDEO_VAE = "minimax_h3_video_vae_int8_convrot.safetensors"
 AUDIO_VAE = "minimax_h3_audio_vae_fp32.safetensors"
-TURBO = "minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors"
-FAST_TURBO = "minimax_h3_fl2v_turbo_4step_v1.0_768p_comfyui_bf16.safetensors"
-FAST_OUT = os.path.join(os.path.dirname(OUT), "minimax_h3_fast_workflow.json")
-FAST_DRAFT_OUT = os.path.join(os.path.dirname(OUT), "minimax_h3_fast_draft_workflow.json")
+TURBO_544 = "minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors"
+TURBO_768_8 = "minimax_h3_fl2v_turbo_8step_v1.0_768p_comfyui_bf16.safetensors"
+TURBO_768_4 = "minimax_h3_fl2v_turbo_4step_v1.0_768p_comfyui_bf16.safetensors"
 
-PROMPT = """integrated_multimodal_description: [Shot 1] Live-action, a presenter - the person in the reference pictures - speaks directly to the camera. The camera remains stationary on a tripod with a fixed focal length throughout the entire shot. Framing, subject size and camera distance remain identical to the reference pictures in every frame. No zoom, dolly, pan, tilt, reframing or cuts. The presenter (S1) talks in a clear, natural voice, lip movements matching the provided speech audio exactly, with subtle eyebrow and jaw movement, natural blinking and small head nods while talking. Face, hair, clothing, lighting and background match the reference pictures exactly throughout.
-
-overall_soundscape: Quiet indoor room tone under the voice. No music, no sound effects."""
-
-NOTE_INPUTS = """## Inputs
-
-- **Load Portrait** - your presenter, facing the camera, face clearly visible. It anchors every chunk's end and, with motion carry off, its start.
-- **Load Voiceover** - your speech track, any length. Mono is fine (it is upmixed to stereo for H3's audio VAE).
-
-Drop files in `ComfyUI/input/`, or upload them through the nodes.
-
-## Running a long render
-
-1. Queue **once** with `chunk_index = 0` and read `total_chunks` in the console (or just skip this).
-2. Queue with a **batch count at least that large** - surplus items are blocked and cost milliseconds.
-3. The last chunk stitches everything into `output/<audio name>.mp4` and clears the queue.
-
-Interrupted? Set `chunk_index` back to 0 and queue again: finished chunks are skipped."""
+DELIVERY = "a clear, calm, natural voice"
+# Split: chunk_index, target_seconds, min_seconds, max_seconds, cut_mode,
+# skip_existing, motion_carry. Every frame between a chunk's two pinned portraits is
+# invented, so drift grows with chunk length: 10s rather than H3's 15s ceiling.
+SPLIT_WIDGETS = [0, 8.0, 5.0, 10.0, "pause", True, "off"]
+# Model Sparse Attention (Sol-Attn): method, tau, start_percent, end_percent,
+# dense_blocks, min_tokens, extra_tokens, sink_conditioning, verbose.
+# exact_kv_and_rows keeps the text, pinned portraits and voiceover rows exact for
+# every query, and the generated audio rows dense.
+SPARSE_WIDGETS = ["sol-attn", 1.3, 0.2, 1.0, "", 12288, 256, "exact_kv_and_rows", False]
+BYPASS = 4  # LiteGraph node mode: pass the input straight through
 
 NOTE_LICENSE = """## Licence - read before running
 
@@ -54,6 +50,21 @@ MiniMax H3's open weights are **not licensed for use in the United States, the E
 Also required by the licence: comply with its Acceptable Use Policy (no impersonating real people without consent, no content harming minors, no election misinformation...), and display \"MiniMax H3\" in any commercial product built on it.
 
 Full text: https://huggingface.co/MiniMaxAI/MiniMax-H3/blob/main/LICENSE"""
+
+NOTE_CONSISTENCY = """## Keeping the background and the frame clean
+
+H3 pins your portrait only at the **first and last frame** of each chunk. Every frame in between is generated, and the model fills whatever the prompt leaves open - a changing backdrop, a lower-third, a channel logo.
+
+This workflow closes those gaps:
+
+- **Describe the portrait** in the Talking-Head Prompt: `subject` (who, what they wear) and `background` (what is behind them, concretely). Naming the background is what holds it in place.
+- The prompt uses MiniMax's own format exactly: the alignment line, then the three fields `integrated_multimodal_description`, `overall_soundscape` and `non_diegetic_music`. It states a locked-off camera, one person, and no text, logos or graphics.
+- Chunks are capped at **10 s** (H3 can do 15). Less time between anchors means less invention.
+- Each Turbo LoRA runs at the resolution and sigma shift it was distilled at.
+
+**Still seeing changes?** Make `background` more specific (colours, objects, lighting), lower `max_seconds` on Split to 8, or render the final pass with Turbo off.
+
+Use a portrait with a simple, evenly lit background, and nothing text-like in it: signs, screens and logos in the portrait tend to animate."""
 
 NOTE_GRID = """## Why chunks are not whole seconds
 
@@ -67,7 +78,7 @@ The pinned portrait at the end is dropped. With carry off, the next chunk opens 
 
 The final chunk is generated at the next grid length up and trimmed to the end of the track.
 
-`alignment` tells H3 where each reference picture lands, as MiniMax's prompt guide asks for FL2VA - it changes with every chunk, so it is generated rather than typed. Describe the presenter as "the person in the reference pictures", not "Picture 1/2": with motion carry, there is only one picture."""
+The prompt's first line tells H3 where each portrait lands, as MiniMax's prompt guide requires. It changes with every chunk, so the Talking-Head Prompt node writes it."""
 
 NOTE_CARRY = """## motion_carry (on Split) - off by default, experimental
 
@@ -75,7 +86,7 @@ NOTE_CARRY = """## motion_carry (on Split) - off by default, experimental
 
 **5 / 22 frames** - after chunk 0, each chunk opens on the previous chunk's last 5 (~0.2s) or 22 (~0.9s) written frames, pinned as a clip to help carry motion across the join. The **last** frame stays pinned to the portrait to limit identity drift. Visual continuity and identity preservation still need GPU testing.
 
-The lead-in frames are generated again (with their original audio) and trimmed by Write, so nothing plays twice and sync is unchanged. They count toward H3's 362-frame ceiling, so chunks get slightly shorter.
+The lead-in frames are generated again (with their original audio) and trimmed by Write, so nothing plays twice and sync is unchanged. They count toward the chunk's length, so chunks get slightly shorter.
 
 Pick it before a render starts and use a fresh session when changing it - it changes where every chunk begins. Queue chunks in order. Compare on a short clip first: if the join shows a colour or sharpness step, go back to off."""
 
@@ -94,11 +105,79 @@ The portrait is center-cropped to this size before it reaches H3, so the first f
 
 NOTE_SPEED = """## Speed / quality
 
-**Turbo LoRA** on (default): 8 steps. Off: 20 steps without the LoRA - roughly 2.5x slower per chunk.
+**Turbo on** (default): the 8-step **768p** Turbo LoRA with its trained video/audio shift of 6/3. **Off**: 20 steps of the base model at its default shift 12/3 - roughly 2.5x slower per chunk, the best quality for a final pass.
 
-A 7-minute voiceover is about 30-35 chunks. Test a single chunk first (`batch count = 1`) to check lip sync and identity before committing to the whole render.
+**Attention backend**: Comfy Kitchen INT8 attention, ComfyUI's built-in quantized attention (the same idea as SageAttention). Set it to `pytorch attention` to compare quality.
 
-If a chunk runs out of VRAM, lower `max_seconds` on Split, or use a smaller canvas."""
+**Model Sparse Attention** (Sol-Attn) is **bypassed** here to keep this the quality reference. Select it and press Ctrl+B to enable it. It skips low-weight attention blocks on long sequences, while attention to the portraits, text and voiceover stays exact. The Fast workflows have it on.
+
+Test a single chunk first (`batch count = 1`). If a chunk runs out of VRAM, lower `max_seconds` on Split or use a smaller canvas."""
+
+NOTE_INPUTS = """## Inputs
+
+- **Load Portrait** - one person facing the camera, face clearly visible, in front of the background you want to keep. It is pinned as the first and last frame of every chunk.
+- **Load Voiceover** - your speech track, any length. Mono is fine.
+- **Talking-Head Prompt** - describe the `subject` and the `background` you can see in the portrait, in a few concrete words. The node writes the full MiniMax-format prompt for every chunk.
+
+Drop files in `ComfyUI/input/`, or upload them through the nodes.
+
+## Running a long render
+
+1. Test one chunk (batch count 1) and check `output/h3_longform/<audio name>_v2/chunk_0000.mp4`.
+2. Set `chunk_index` back to **0** and queue with a **batch count of at least audio seconds / 8**, plus a margin. Surplus items are skipped in milliseconds.
+3. The last chunk stitches everything into `output/<audio name>_v2.mp4` and clears the queue.
+
+Interrupted? Set `chunk_index` back to 0 and queue again: finished chunks are skipped."""
+
+NOTE_FAST = """# MiniMax H3 Fast
+
+Dedicated **4-step 768p Turbo** LoRA (video/audio shift 6/3), INT8 attention and Sol-Attn sparse attention. Same portrait + voiceover, automatic chunks, resume and stitching as the standard workflow.
+
+1. Upload **Portrait** and **Voiceover**.
+2. In **Talking-Head Prompt**, describe the `subject` and `background` you see in the portrait. This is what keeps the background from changing.
+3. Test one chunk (batch count 1). Then set chunk_index to **0** and queue audio seconds / 8, plus a margin. The final chunk stitches `output/<audio name>_fast_v2.mp4`.
+
+Change `name_suffix` on the output-name node to start a fresh take when changing inputs or settings.
+
+Model and sampling nodes below are collapsed: double-click to inspect them. To compare quality, bypass **Model Sparse Attention** (Ctrl+B) or set the attention backend to `pytorch attention`.
+
+Licence and full instructions: https://github.com/tenitsky/minimax-h3
+"""
+
+NOTE_DRAFT = """# MiniMax H3 Fast Draft
+
+**544 x 544, four steps** - the 544p-trained Turbo LoRA in its supported four-step mode (video/audio shift 12/3), INT8 attention and Sol-Attn sparse attention. About half the pixels per frame of the 768 workflows: use it to check timing and framing, then render the final with Fast or the standard workflow.
+
+1. Upload **Portrait** and **Voiceover**.
+2. In **Talking-Head Prompt**, describe the `subject` and `background` you see in the portrait.
+3. Test one chunk (batch count 1). Then set chunk_index to **0** and queue audio seconds / 8, plus a margin. The final chunk stitches `output/<audio name>_draft_v2.mp4`.
+
+The LoRA filename says 8step; four-step inference is intentional and supported by its authors.
+
+Model and sampling nodes below are collapsed: double-click to inspect them.
+
+Licence and full instructions: https://github.com/tenitsky/minimax-h3
+"""
+
+VARIANTS = {
+    "standard": dict(
+        path="minimax_h3_long_video_v2.json", id="0d8c2f52-7f7e-4c1b-9d6c-5f2e91a4b3c0",
+        canvas=768, lora=TURBO_768_8, lora_url=TURBO_HF, shift=(6.0, 3.0), steps=8,
+        switch=True, sparse=False, suffix="_v2",
+        fallback=["run1_v2", "h3_longform_v2.mp4"]),
+    "fast": dict(
+        path="minimax_h3_fast_v2.json", id="6e1a9b37-2c55-4f0e-8a31-b7d4c9e0f215",
+        canvas=768, lora=TURBO_768_4, lora_url=HF + "loras/", shift=(6.0, 3.0), steps=4,
+        switch=False, sparse=True, suffix="_fast_v2",
+        fallback=["run1_fast_v2", "h3_fast_v2.mp4"], note=NOTE_FAST,
+        title="MiniMax H3 Fast - start here"),
+    "draft": dict(
+        path="minimax_h3_fast_draft_v2.json", id="b3f7d0c4-81a9-4e62-9c5d-2a6e7f1b8d93",
+        canvas=544, lora=TURBO_544, lora_url=HF + "loras/", shift=(12.0, 3.0), steps=4,
+        switch=False, sparse=True, suffix="_draft_v2",
+        fallback=["run1_draft_v2", "h3_draft_v2.mp4"], note=NOTE_DRAFT,
+        title="MiniMax H3 Fast Draft - lower detail, less GPU work"),
+}
 
 
 class Graph:
@@ -107,16 +186,17 @@ class Graph:
         self._link_id = 0
 
     def node(self, nid, ntype, pos, size, inputs=(), outputs=(), widgets=None,
-             title=None, models=None, color=None, cnr="comfy-core"):
+             title=None, models=None, color=None, cnr="comfy-core", mode=0):
         props = {"Node name for S&R": ntype}
         if cnr:
             props["cnr_id"] = cnr
         if models:
-            props["models"] = [{"name": n, "url": HF + d + "/" + n, "directory": d}
-                               for n, d in models]
+            # (filename, models/ subfolder, download URL)
+            props["models"] = [{"name": n, "url": url, "directory": d}
+                               for n, d, url in models]
         n = {
             "id": nid, "type": ntype, "pos": list(pos), "size": list(size),
-            "flags": {}, "order": len(self.nodes), "mode": 0,
+            "flags": {}, "order": len(self.nodes), "mode": mode,
             # (name, type, is_widget, optional)
             "inputs": [dict({"localized_name": nm, "name": nm, "type": tp, "link": None},
                             **({"widget": {"name": nm}} if wid else {}),
@@ -159,18 +239,25 @@ def md(g, nid, title, text, pos, size):
            color=("#222", "#000"))
 
 
-def build():
+def build(variant="standard"):
+    v = VARIANTS[variant]
     g = Graph()
     INPUT = ("#322", "#533")    # red: things you set
     W, I = True, False           # input is a widget / a plain socket
+    side = v["canvas"]
 
     # ---------------------------------------------------------------- notes
-    md(g, 1, "Note: Inputs + how to run", NOTE_INPUTS, (-1500, -40), (460, 460))
-    md(g, 2, "Note: LICENCE (read first)", NOTE_LICENSE, (-1500, 440), (460, 360))
-    md(g, 3, "Why chunks are not whole seconds", NOTE_GRID, (-500, 840), (520, 480))
-    md(g, 4, "Note: Resolution", NOTE_SIZE, (60, 840), (420, 380))
-    md(g, 5, "Note: Speed / quality", NOTE_SPEED, (520, 840), (420, 300))
-    md(g, 6, "Note: motion_carry", NOTE_CARRY, (980, 840), (460, 420))
+    if v["switch"]:
+        md(g, 1, "Note: Inputs + how to run", NOTE_INPUTS, (-1500, -40), (460, 520))
+        md(g, 2, "Note: LICENCE (read first)", NOTE_LICENSE, (-1500, 500), (460, 360))
+        md(g, 3, "Why chunks are not whole seconds", NOTE_GRID, (-500, 900), (520, 480))
+        md(g, 4, "Note: Resolution", NOTE_SIZE, (60, 900), (420, 380))
+        md(g, 5, "Note: Speed / quality", NOTE_SPEED, (520, 900), (440, 440))
+        md(g, 6, "Note: motion_carry", NOTE_CARRY, (1000, 900), (460, 420))
+    else:
+        md(g, 1, v["title"], v["note"], (0, 0), (360, 640))
+    md(g, 7, "Note: Keeping the background and the frame clean", NOTE_CONSISTENCY,
+       (1500, 900) if v["switch"] else (1680, 0), (460, 560))
 
     # ---------------------------------------------------------------- inputs
     g.node(10, "LoadImage", (-1000, -40), (400, 460),
@@ -184,75 +271,97 @@ def build():
            outputs=[("INT", "INT")], widgets=[0, "increment"],
            title="chunk_index (set to increment)", color=INPUT)
     g.node(13, "PrimitiveInt", (-1000, 770), (190, 90),
-           outputs=[("INT", "INT")], widgets=[768, "fixed"], title="Width")
+           outputs=[("INT", "INT")], widgets=[side, "fixed"], title="Width")
     g.node(14, "PrimitiveInt", (-790, 770), (190, 90),
-           outputs=[("INT", "INT")], widgets=[768, "fixed"], title="Height")
+           outputs=[("INT", "INT")], widgets=[side, "fixed"], title="Height")
 
     # ---------------------------------------------------------------- longform plan
-    g.node(20, "H3LongformSplit", (-500, 440), (400, 300),
+    g.node(20, "H3LongformSplit", (-500, 500), (400, 300),
            inputs=[("audio", "AUDIO", I, False), ("chunk_index", "INT", W, False)],
            outputs=[("audio_chunk", "AUDIO"), ("length", "INT"), ("keep_frames", "INT"),
                     ("total_chunks", "INT"), ("is_last", "BOOLEAN"),
                     ("alignment", "STRING"), ("guide_audio", "AUDIO"),
                     ("carry_frames", "INT")],
-           widgets=[0, 12.0, 5.0, 15.0, "pause", True, "off"],
+           widgets=list(SPLIT_WIDGETS),
            title="1. Split Audio Chunk (H3 frame grid)", cnr="comfyui-h3-longform")
-    g.node(21, "H3LongformAudioName", (-500, 740), (400, 90),
+    g.node(21, "H3LongformAudioName", (-500, 810), (400, 110),
            outputs=[("name", "STRING"), ("filename", "STRING")],
-           widgets=[".mp4", "", ""],
-           title="Name run from audio filename (unlink to type your own)",
+           widgets=[".mp4", "", v["suffix"]],
+           title="Output name (audio filename + name_suffix)",
            cnr="comfyui-h3-longform")
 
     # ---------------------------------------------------------------- prompt
-    g.node(30, "PrimitiveStringMultiline", (-500, -40), (520, 460),
-           outputs=[("STRING", "STRING")], widgets=[PROMPT], title="Prompt",
-           color=INPUT)
-    g.node(31, "StringConcatenate", (60, 540), (400, 200),
-           inputs=[("string_a", "STRING", W, False), ("string_b", "STRING", W, False)],
-           outputs=[("STRING", "STRING")], widgets=["", "", "\n\n"],
-           title="alignment + prompt")
+    g.node(30, "H3LongformPrompt", (-500, -40), (520, 500),
+           inputs=[("length", "INT", W, False), ("carry_frames", "INT", W, False)],
+           outputs=[("prompt", "STRING")],
+           widgets=[124, 0, "", "", DELIVERY, ""],
+           title="Talking-Head Prompt (describe subject + background)", color=INPUT,
+           cnr="comfyui-h3-longform")
 
     # ---------------------------------------------------------------- models
-    g.node(40, "UNETLoader", (60, -300), (520, 90),
+    lora_title = {"standard": "Turbo LoRA: 8-step 768p",
+                  "fast": "Fast: 4-step 768p Turbo LoRA",
+                  "draft": "544p Turbo v1.0 (four-step mode)"}[variant]
+    g.node(40, "UNETLoader", (60, -540), (520, 90),
            outputs=[("MODEL", "MODEL")], widgets=[UNET, "default"],
-           models=[(UNET, "diffusion_models")])
-    g.node(41, "LoraLoaderModelOnly", (60, -180), (520, 90),
+           models=[(UNET, "diffusion_models", HF + "diffusion_models/" + UNET)])
+    g.node(41, "LoraLoaderModelOnly", (60, -420), (520, 90),
            inputs=[("model", "MODEL", I, False)], outputs=[("MODEL", "MODEL")],
-           widgets=[TURBO, 1], models=[(TURBO, "loras")])
-    g.node(42, "CLIPLoader", (60, -60), (520, 110),
+           widgets=[v["lora"], 1], title=lora_title,
+           models=[(v["lora"], "loras", v["lora_url"] + v["lora"])])
+    shift_video, shift_audio = v["shift"]
+    g.node(75, "MiniMaxH3SigmaShift", (60, -300), (520, 110),
+           inputs=[("model", "MODEL", I, False)], outputs=[("MODEL", "MODEL")],
+           widgets=[shift_video, shift_audio],
+           title=f"Turbo sigma shift (video {shift_video:g} / audio {shift_audio:g})")
+    g.node(42, "CLIPLoader", (60, -160), (520, 110),
            outputs=[("CLIP", "CLIP")], widgets=[TE, "minimax", "default"],
-           models=[(TE, "text_encoders")])
-    g.node(43, "VAELoader", (60, 80), (520, 60),
+           models=[(TE, "text_encoders", HF + "text_encoders/" + TE)])
+    g.node(43, "VAELoader", (60, -20), (520, 60),
            outputs=[("VAE", "VAE")], widgets=[VIDEO_VAE], title="Video VAE",
-           models=[(VIDEO_VAE, "vae")])
-    g.node(44, "VAELoader", (60, 170), (520, 60),
+           models=[(VIDEO_VAE, "vae", HF + "vae/" + VIDEO_VAE)])
+    g.node(44, "VAELoader", (60, 70), (520, 60),
            outputs=[("VAE", "VAE")], widgets=[AUDIO_VAE], title="Audio VAE",
-           models=[(AUDIO_VAE, "vae")])
+           models=[(AUDIO_VAE, "vae", HF + "vae/" + AUDIO_VAE)])
 
-    g.node(45, "PrimitiveBoolean", (60, 270), (250, 60),
-           outputs=[("BOOLEAN", "BOOLEAN")], widgets=[True],
-           title="Turbo LoRA (8 steps)", color=INPUT)
-    g.node(46, "PrimitiveInt", (60, 360), (190, 90),
-           outputs=[("INT", "INT")], widgets=[20, "fixed"], title="Steps (base)")
-    g.node(47, "PrimitiveInt", (270, 360), (190, 90),
-           outputs=[("INT", "INT")], widgets=[8, "fixed"], title="Steps (turbo)")
-    g.node(48, "ComfySwitchNode", (620, -240), (250, 110),
-           inputs=[("on_false", "MODEL", I, False), ("on_true", "MODEL", I, False),
-                   ("switch", "BOOLEAN", W, False)],
-           outputs=[("output", "MODEL")], widgets=[True],
-           title="If/Else Switch (Model)")
-    g.node(49, "ComfySwitchNode", (620, 360), (250, 110),
-           inputs=[("on_false", "INT", I, False), ("on_true", "INT", I, False),
-                   ("switch", "BOOLEAN", W, False)],
-           outputs=[("output", "INT")], widgets=[True], title="If/Else Switch (Steps)")
+    if v["switch"]:
+        g.node(45, "PrimitiveBoolean", (60, 170), (250, 60),
+               outputs=[("BOOLEAN", "BOOLEAN")], widgets=[True],
+               title="Turbo LoRA (8 steps)", color=INPUT)
+        g.node(46, "PrimitiveInt", (60, 260), (190, 90),
+               outputs=[("INT", "INT")], widgets=[20, "fixed"], title="Steps (base)")
+        g.node(47, "PrimitiveInt", (270, 260), (190, 90),
+               outputs=[("INT", "INT")], widgets=[v["steps"], "fixed"],
+               title="Steps (turbo)")
+        g.node(48, "ComfySwitchNode", (620, -540), (250, 110),
+               inputs=[("on_false", "MODEL", I, False), ("on_true", "MODEL", I, False),
+                       ("switch", "BOOLEAN", W, False)],
+               outputs=[("output", "MODEL")], widgets=[True],
+               title="If/Else Switch (Model)")
+        g.node(49, "ComfySwitchNode", (620, 260), (250, 110),
+               inputs=[("on_false", "INT", I, False), ("on_true", "INT", I, False),
+                       ("switch", "BOOLEAN", W, False)],
+               outputs=[("output", "INT")], widgets=[True], title="If/Else Switch (Steps)")
+
+    # ---------------------------------------------------------------- acceleration
+    g.node(76, "ModelAttentionBackend", (1400, -660), (300, 60),
+           inputs=[("model", "MODEL", I, False)], outputs=[("model", "MODEL")],
+           widgets=["comfy kitchen attention"],
+           title="Attention backend (INT8, like SageAttention)")
+    g.node(77, "BlockSparseAttention", (1400, -560), (300, 230),
+           inputs=[("model", "MODEL", I, False)], outputs=[("model", "MODEL")],
+           widgets=list(SPARSE_WIDGETS),
+           title="Model Sparse Attention (Sol-Attn)" + ("" if v["sparse"] else
+                                                          " - Ctrl+B to enable"),
+           mode=0 if v["sparse"] else BYPASS)
 
     # ---------------------------------------------------------------- conditioning
-    g.node(50, "ImageScale", (620, -60), (300, 170),
+    g.node(50, "ImageScale", (620, -380), (300, 170),
            inputs=[("image", "IMAGE", I, False), ("width", "INT", W, False),
                    ("height", "INT", W, False)],
-           outputs=[("IMAGE", "IMAGE")], widgets=["lanczos", 768, 768, "center"],
+           outputs=[("IMAGE", "IMAGE")], widgets=["lanczos", side, side, "center"],
            title="Crop portrait to canvas")
-    g.node(53, "H3LongformCarry", (620, 160), (300, 150),
+    g.node(53, "H3LongformCarry", (620, -170), (300, 150),
            inputs=[("portrait", "IMAGE", I, False),
                    ("chunk_index", "INT", W, False),
                    ("carry_frames", "INT", W, False)],
@@ -265,7 +374,7 @@ def build():
                    ("prompt", "STRING", W, False), ("width", "INT", W, False),
                    ("height", "INT", W, False), ("length", "INT", W, False)],
            outputs=[("positive", "CONDITIONING"), ("LATENT", "LATENT")],
-           widgets=["", 768, 768, 124])
+           widgets=["", side, side, 124])
     g.node(52, "MiniMaxH3AddGuide", (960, 80), (400, 190),
            inputs=[("positive", "CONDITIONING", I, False), ("latent", "LATENT", I, False),
                    ("vae", "VAE", I, True), ("audio_vae", "VAE", I, True),
@@ -280,11 +389,13 @@ def build():
            outputs=[("GUIDER", "GUIDER")])
     g.node(61, "RandomNoise", (1400, -210), (300, 90),
            outputs=[("NOISE", "NOISE")], widgets=[42, "fixed"])
+    # The Turbo LoRAs are distilled on Euler flow steps (authors' ComfyUI guide).
     g.node(62, "KSamplerSelect", (1400, -90), (300, 60),
-           outputs=[("SAMPLER", "SAMPLER")], widgets=["res_multistep"])
+           outputs=[("SAMPLER", "SAMPLER")], widgets=["euler"])
     g.node(63, "BasicScheduler", (1400, 0), (300, 110),
-           inputs=[("model", "MODEL", I, False), ("steps", "INT", W, False)],
-           outputs=[("SIGMAS", "SIGMAS")], widgets=["simple", 8, 1])
+           inputs=[("model", "MODEL", I, False)]
+           + ([("steps", "INT", W, False)] if v["switch"] else []),
+           outputs=[("SIGMAS", "SIGMAS")], widgets=["simple", v["steps"], 1])
     g.node(64, "SamplerCustomAdvanced", (1740, -300), (260, 330),
            inputs=[("noise", "NOISE", I, False), ("guider", "GUIDER", I, False),
                    ("sampler", "SAMPLER", I, False), ("sigmas", "SIGMAS", I, False),
@@ -302,23 +413,31 @@ def build():
                    ("session", "STRING", W, False), ("filename", "STRING", W, False),
                    ("trim_start", "INT", W, True)],
            outputs=[("status", "STRING")],
-           widgets=[0, 1, 123, "run1", "h3_longform_final.mp4", True, 0],
+           widgets=[0, 1, 123] + v["fallback"] + [True, 0],
            title="2. Write + Stitch", cnr="comfyui-h3-longform")
 
     # ---------------------------------------------------------------- wiring
     L = g.link
     L(11, 0, 20, "audio")
     L(12, 0, 20, "chunk_index")
-    L(20, 5, 31, "string_a")          # alignment
-    L(30, 0, 31, "string_b")          # your prompt
+    L(20, 1, 30, "length")
+    L(20, 7, 30, "carry_frames")
 
+    # Turbo branch: LoRA -> its trained shift. Base branch keeps the model's own
+    # 12/3 default. Both then share the attention patches.
     L(40, 0, 41, "model")
-    L(40, 0, 48, "on_false")
-    L(41, 0, 48, "on_true")
-    L(45, 0, 48, "switch")
-    L(46, 0, 49, "on_false")
-    L(47, 0, 49, "on_true")
-    L(45, 0, 49, "switch")
+    L(41, 0, 75, "model")
+    if v["switch"]:
+        L(40, 0, 48, "on_false")
+        L(75, 0, 48, "on_true")
+        L(45, 0, 48, "switch")
+        L(46, 0, 49, "on_false")
+        L(47, 0, 49, "on_true")
+        L(45, 0, 49, "switch")
+        L(48, 0, 76, "model")
+    else:
+        L(75, 0, 76, "model")
+    L(76, 0, 77, "model")
 
     L(10, 0, 50, "image")
     L(13, 0, 50, "width")
@@ -331,7 +450,7 @@ def build():
     L(20, 7, 53, "carry_frames")
     L(53, 0, 51, "first_frame")
     L(50, 0, 51, "last_frame")
-    L(31, 0, 51, "prompt")
+    L(30, 0, 51, "prompt")
     L(13, 0, 51, "width")
     L(14, 0, 51, "height")
     L(20, 1, 51, "length")
@@ -343,10 +462,11 @@ def build():
     L(53, 1, 52, "image")
     L(20, 6, 52, "audio")
 
-    L(48, 0, 60, "model")
+    L(77, 0, 60, "model")
     L(52, 0, 60, "conditioning")
-    L(48, 0, 63, "model")
-    L(49, 0, 63, "steps")
+    L(77, 0, 63, "model")
+    if v["switch"]:
+        L(49, 0, 63, "steps")
     L(61, 0, 64, "noise")
     L(60, 0, 64, "guider")
     L(62, 0, 64, "sampler")
@@ -365,8 +485,8 @@ def build():
     L(21, 0, 70, "session")
     L(21, 1, 70, "filename")
 
-    return {
-        "id": "5b2f7c1e-9a41-4d3e-8f10-3a1c0f9e2b77",
+    wf = {
+        "id": v["id"],
         "revision": 0,
         "last_node_id": max(n["id"] for n in g.nodes),
         "last_link_id": g._link_id,
@@ -374,162 +494,57 @@ def build():
         "links": g.links,
         "groups": [],
         "config": {},
-        "extra": {"ds": {"scale": 0.6, "offset": [1600, 500]}},
+        "extra": {"ds": {"scale": 0.6, "offset": [1600, 700]}},
         "version": 0.4,
     }
+    if not v["switch"]:
+        compact(wf)
+    return wf
 
 
-def build_fast():
-    """Fixed four-step FL2VA with the author's 768p LoRA settings.
+def compact(wf):
+    """Daily controls across the top, advanced nodes collapsed in groups below.
 
-    Reuse the tested audio/carry/write graph; remove the optional base-model and
-    step switches. Advanced nodes are collapsed for a smaller working canvas.
-    Fewer visible nodes do not themselves speed up inference.
+    Fewer boxes on screen do not reduce model work; this is only for readability.
     """
-    wf = build()
-    old_nodes = {n["id"]: n for n in wf["nodes"]}
-    connections = [(src, slot, dst, old_nodes[dst]["inputs"][port]["name"])
-                   for _, src, slot, dst, port, _ in wf["links"]]
-    removed = {2, 3, 4, 5, 6, 45, 46, 47, 48, 49}
-    g = Graph()
-    g.nodes = [n for n in wf["nodes"] if n["id"] not in removed]
-    nodes = {n["id"]: n for n in g.nodes}
-    nodes[1]["title"] = "MiniMax H3 Fast - start here"
-    nodes[1]["widgets_values"] = ["""# MiniMax H3 Fast
-
-Dedicated **4-step 768p Turbo** LoRA. Same portrait + voiceover, automatic chunks,
-resume and final stitching as the standard workflow. No extra model selection.
-
-1. Upload **Portrait** and **Voiceover**. Leave chunk_index on **increment**.
-2. Test one chunk (batch count 1). Reset chunk_index to 0 to resume.
-3. Queue enough items: audio seconds / 12, plus a margin. The final chunk stitches
-   `output/<audio name>_fast.mp4` and clears the queue.
-
-Fast sessions have `_fast` in their names, so standard renders are kept separate.
-Use a new Name suffix if you change inputs or settings. Width/Height default to
-768 x 768; 1344 x 768 or 768 x 1344 use more memory and compute.
-
-Model and sampling nodes below are collapsed: double-click to inspect them.
-Four sampling steps instead of eight should reduce sampling time; total speed,
-lip sync and identity still need GPU testing. Quality can differ from 8 steps.
-Motion carry is optional on Split; leave off for the first test.
-
-Licence and full instructions: https://github.com/tenitsky/minimax-h3
-"""]
-    nodes[21]["widgets_values"] = [".mp4", "", "_fast"]
-    nodes[21]["title"] = "Output name (audio filename + name_suffix)"
-    nodes[41]["widgets_values"] = [FAST_TURBO, 1]
-    nodes[41]["properties"]["models"] = [
-        {"name": FAST_TURBO, "url": HF + "loras/" + FAST_TURBO, "directory": "loras"}]
-    nodes[41]["title"] = "Fast: 4-step 768p Turbo LoRA"
-    nodes[62]["widgets_values"] = ["euler"]
-    nodes[63]["widgets_values"] = ["simple", 4, 1]
-    # Steps are now an ordinary widget, not a socket driven by the old switch.
-    nodes[63]["inputs"] = [i for i in nodes[63]["inputs"] if i["name"] != "steps"]
-    nodes[70]["widgets_values"][3:5] = ["run1_fast", "h3_fast_final.mp4"]
-    g.node(75, "MiniMaxH3SigmaShift", (0, 0), (300, 110),
-           inputs=[("model", "MODEL", False, False)], outputs=[("MODEL", "MODEL")],
-           widgets=[6.0, 3.0], title="Fast sigma shift (video 6 / audio 3)")
-    nodes[75] = g.nodes[-1]
-
-    # Rebuild links from their named endpoints to avoid stale slot numbers after
-    # removing switch-driven inputs. Both scheduler and guider use shifted model.
-    for order, node in enumerate(g.nodes):
-        node["order"] = order
-        for inp in node["inputs"]:
-            inp["link"] = None
-        for out in node["outputs"]:
-            out["links"] = []
-    for src, slot, dst, name in connections:
-        if dst in removed or src in removed - {48}:
-            continue
-        g.link(75 if src == 48 else src, slot, dst, name)
-    g.link(41, 0, 75, "model")
-
-    # Daily controls across the top, compact advanced groups underneath.
+    nodes = {n["id"]: n for n in wf["nodes"]}
     layout = {
-        1: ((0, 0), (360, 610)), 10: ((400, 0), (330, 360)),
+        1: ((0, 0), (360, 640)), 10: ((400, 0), (330, 360)),
         11: ((400, 390), (330, 140)), 12: ((400, 560), (330, 90)),
-        30: ((770, 0), (420, 330)), 20: ((770, 365), (420, 290)),
+        30: ((770, 0), (420, 360)), 20: ((770, 395), (420, 290)),
         13: ((1230, 0), (190, 90)), 14: ((1440, 0), (190, 90)),
-        21: ((1230, 130), (400, 130)), 70: ((1230, 300), (400, 310)),
+        21: ((1230, 130), (400, 130)), 70: ((1230, 300), (400, 340)),
     }
     for nid, (pos, size) in layout.items():
         nodes[nid]["pos"], nodes[nid]["size"] = list(pos), list(size)
     groups = [
-        ("Models - loaded automatically", [40, 41, 75, 42, 43, 44], 0, "#355563"),
-        ("Portrait + voice guidance", [50, 53, 31, 51, 52], 560, "#4a5568"),
-        ("Four-step sampling + decode", [60, 61, 62, 63, 64, 65], 1120, "#4c566a"),
+        ("Models + acceleration - loaded automatically",
+         [40, 41, 75, 76, 77, 42, 43, 44], 0, "#355563"),
+        ("Portrait + voice guidance", [50, 53, 51, 52], 560, "#4a5568"),
+        ("Sampling + decode", [60, 61, 62, 63, 64, 65], 1120, "#4c566a"),
     ]
-    wf["groups"] = []
     for gid, (title, ids, x, color) in enumerate(groups, 1):
         for index, nid in enumerate(ids):
             nodes[nid]["pos"] = [x + 25, 790 + index * 55]
             nodes[nid]["flags"] = {"collapsed": True}
         wf["groups"].append({"id": gid, "title": title,
-                             "bounding": [x, 730, 530, 420],
+                             "bounding": [x, 730, 530, 520],
                              "color": color, "font_size": 22, "flags": {}})
-    wf.update(id="a4fb6153-c9bf-4ba8-9b8a-e495d1b00804", nodes=g.nodes, links=g.links,
-              last_node_id=75, last_link_id=g._link_id)
     wf["extra"] = {"ds": {"scale": 0.7, "offset": [40, 50]}}
-    return wf
+
+
+def build_fast():
+    return build("fast")
 
 
 def build_fast_draft():
-    """Reduce spatial work using the 544p LoRA's supported four-step mode.
-
-    The non-768p v1.0 LoRA supports both eight and four inference steps with
-    video/audio shifts 12/3. Keep the existing chunk duration: shorter chunks
-    would add more prompt encoding, boundary frames and padding per voiceover.
-    """
-    wf = build_fast()
-    nodes = {n["id"]: n for n in wf["nodes"]}
-    wf["id"] = "9b2f3be5-2a41-4416-bb4b-161d7cbef581"
-    nodes[1]["title"] = "MiniMax H3 Fast Draft - lower detail, less GPU work"
-    nodes[1]["widgets_values"] = ["""# MiniMax H3 Fast Draft
-
-**544 x 544, four steps.** About half the pixels per frame of Fast 768 x 768.
-Use this for speed-focused drafts; output has less detail and is not upscaled.
-
-1. Upload **Portrait** and **Voiceover**. Leave chunk_index on **increment**.
-2. Test one chunk (batch count 1). Reset chunk_index to 0 to resume.
-3. Queue enough items: audio seconds / 12, plus a margin. The final chunk stitches
-   `output/<audio name>_fast_draft.mp4` and clears the queue.
-
-Reuses the installed **FL2V Turbo 8-step v1.0** LoRA in its author-supported
-**four-step** mode: Euler, simple scheduler, video/audio shifts 12/3. The filename
-says 8step; four-step inference is intentional for this lower-resolution draft.
-
-Portrait anchors, the full voiceover, resume and stitching stay enabled. Motion
-carry defaults to off. Chunks still run up to 15s to avoid extra boundary overhead.
-
-Change `name_suffix` to start a new take when changing inputs or settings. Draft
-sessions end in `_fast_draft`, separate from Fast and standard renders.
-
-Less model work does not guarantee a particular speedup. Loading, encoding and
-CPU offloading can still dominate. Speed, lip sync and identity need GPU testing.
-Use the standard or 768p Fast workflow when you need more detail.
-
-Licence and full instructions: https://github.com/tenitsky/minimax-h3
-"""]
-    for nid in (13, 14):
-        nodes[nid]["widgets_values"] = [544, "fixed"]
-    nodes[50]["widgets_values"][1:3] = [544, 544]
-    nodes[51]["widgets_values"][1:3] = [544, 544]
-    nodes[41]["widgets_values"] = [TURBO, 1]
-    nodes[41]["properties"]["models"] = [
-        {"name": TURBO, "url": HF + "loras/" + TURBO, "directory": "loras"}]
-    nodes[41]["title"] = "544p Turbo v1.0 (four-step mode)"
-    nodes[75]["widgets_values"] = [12.0, 3.0]
-    nodes[75]["title"] = "Draft sigma shift (video 12 / audio 3)"
-    nodes[21]["widgets_values"] = [".mp4", "", "_fast_draft"]
-    nodes[70]["widgets_values"][3:5] = ["run1_fast_draft", "h3_fast_draft_final.mp4"]
-    return wf
+    return build("draft")
 
 
 if __name__ == "__main__":
-    for path, wf in ((OUT, build()), (FAST_OUT, build_fast()),
-                     (FAST_DRAFT_OUT, build_fast_draft())):
+    for name in VARIANTS:
+        wf = build(name)
+        path = os.path.join(WORKFLOWS, VARIANTS[name]["path"])
         with open(path, "w", encoding="utf-8", newline="\n") as f:
             json.dump(wf, f, indent=1, ensure_ascii=False)
             f.write("\n")

@@ -87,6 +87,19 @@ download_local model.safetensors "$DEST"
 cmp "$FIXTURE" "$DEST"
 ''')
 
+    def test_turbo_lora_uses_authors_repo_without_mirror(self):
+        self.run_script('''
+HF_BIN=''
+HF_REPO=fixture
+MS_BASE=https://example.invalid/ms
+TURBO_REPO=lightx2v/Minimax-h3-Turbo
+COMFYUI_PATH="$(dirname "$DEST")/ComfyUI"
+mkdir -p "$COMFYUI_PATH/models/loras"
+fetch_url() { printf '%s\\n' "$2" >> "$DEST.urls"; return 1; }
+if download_turbo lora.safetensors; then exit 1; fi
+test "$(cat "$DEST.urls")" = https://huggingface.co/lightx2v/Minimax-h3-Turbo/resolve/main/lora.safetensors
+''')
+
     def test_bootstrap_command_matches_readme_and_parses(self):
         command_file = (ROOT / "runpod-start.json").read_text(encoding="utf-8")
         config = json.loads(command_file)

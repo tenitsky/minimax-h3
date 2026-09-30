@@ -2,7 +2,7 @@
 
 A one-shot template that installs **MiniMax H3** (Hailuo 3.0, open weights, natively
 supported in ComfyUI) on RunPod. It ships a workflow that turns **one portrait and a
-voiceover of any length** into a talking-presenter video, rendered in chunks and then
+voiceover of any length** into a talking-head video, rendered in chunks and then
 stitched. It's the same approach as the LTX-2.5 template, rebuilt around H3's frame
 grid.
 
@@ -24,9 +24,11 @@ Comfy-Org repo on first boot.
 
 ## How long can H3 go?
 
-About **15 seconds per generation**: 362 frames at 24 fps, H3's trained ceiling.
-LTX-2.5 managed about 10 seconds, so a 7-minute voiceover takes roughly 30–35 chunks
-instead of about 50.
+Up to about **15 seconds per generation**: 362 frames at 24 fps, H3's trained
+ceiling. The bundled workflows cap chunks at **10 seconds** by default: H3 pins the
+portrait only at a chunk's first and last frame, and the longer the stretch between
+those anchors, the more the background and framing drift. A 7-minute voiceover takes
+roughly 45–50 chunks. Raise `max_seconds` on Split for fewer, longer chunks.
 
 H3 only accepts frame counts on a **17k+5 grid**: 124, 141, 158 … 362, or about 5.2 to
 15.1 seconds. The bundled node pack plans chunks on that grid. See
@@ -41,7 +43,7 @@ On first pod boot, `setup.sh`:
 2. Copies the baked ComfyUI from `/opt/comfyui-baked` to `/workspace/runpod-slim/ComfyUI`
    (self-healing, skip-if-present)
 3. Checks that the image's ComfyUI has `MiniMaxH3AddGuide`, and stops if not
-4. Installs the bundled `comfyui-h3-longform` nodes (4 nodes, no dependencies besides
+4. Installs the bundled `comfyui-h3-longform` nodes (5 nodes, no dependencies besides
    ffmpeg)
 5. Downloads the H3 model files (skip-if-exists, resumable)
 6. Installs the standard, Fast and Fast Draft workflows into ComfyUI's
@@ -50,9 +52,11 @@ On first pod boot, `setup.sh`:
 
 ## Models pulled
 
-All files come from [`Comfy-Org/MiniMax-H3`](https://huggingface.co/Comfy-Org/MiniMax-H3),
+Files come from [`Comfy-Org/MiniMax-H3`](https://huggingface.co/Comfy-Org/MiniMax-H3),
 which is **ungated**, so no token is needed. The ModelScope copy of the same repo is
-the automatic fallback.
+the automatic fallback. The 8-step **768p** Turbo LoRA isn't repackaged there, so it
+comes from its authors' repo, [`lightx2v/Minimax-h3-Turbo`](https://huggingface.co/lightx2v/Minimax-h3-Turbo)
+(also ungated).
 
 | File | Size | Destination (`ComfyUI/models/`) |
 |---|---|---|
@@ -60,12 +64,13 @@ the automatic fallback.
 | `qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors` | 15.7 GB | `text_encoders/` |
 | `minimax_h3_video_vae_int8_convrot.safetensors` | 2.8 GB | `vae/` |
 | `minimax_h3_audio_vae_fp32.safetensors` | 0.6 GB | `vae/` |
-| `minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors` | 2.0 GB | `loras/` |
-| `minimax_h3_fl2v_turbo_4step_v1.0_768p_comfyui_bf16.safetensors` | 2.0 GB | `loras/` |
+| `minimax_h3_fl2v_turbo_8step_v1.0_768p_comfyui_bf16.safetensors` (standard) | 2.0 GB | `loras/` |
+| `minimax_h3_fl2v_turbo_4step_v1.0_768p_comfyui_bf16.safetensors` (Fast) | 2.0 GB | `loras/` |
+| `minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors` (Fast Draft, 544p) | 2.0 GB | `loras/` |
 | *optional* `minimax_h3_ref2va_pruned_int8_convrot.safetensors` + ref2v turbo LoRA | 23 GB | `diffusion_models/`, `loras/` |
 | *alternative* `qwen3vl_32b_minimax_h3_int8_convrot.safetensors` | 27.1 GB | `text_encoders/` |
 
-The default model set is about **44 GB**. Use **100 GB of Network Volume storage**
+The default model set is about **46 GB**. Use **100 GB of Network Volume storage**
 as a starting point for ComfyUI, its environment, models and renders. An existing
 80 GB volume can be used if it has sufficient free space. Long/high-resolution
 renders or optional model downloads may need more than 100 GB.
@@ -209,15 +214,20 @@ filesystem or run H3 generation on a GPU.
 ## After it boots
 
 1. Open ComfyUI (port 8188), then open the **Workflows** sidebar and choose
-   **`minimax_h3_long_video_workflow`**.
+   **`minimax_h3_long_video_v2`** (or one of the Fast versions below).
 2. Set **Load Portrait** and **Load Voiceover**. The output is named after the audio
    file automatically.
-3. **Test one chunk first:** use batch count 1 and check lip sync and identity in
-   `output/h3_longform/<name>/chunk_0000.mp4`.
-4. Set `chunk_index` back to 0, then queue with a batch count of **at least the number
-   of chunks**, roughly audio seconds ÷ 12, plus margin. Surplus items are skipped in
+3. In **Talking-Head Prompt**, describe the `subject` and the `background` you can
+   see in the portrait, in a few concrete words, for example *"a man in his forties
+   with short grey hair, wearing a dark blue sweater"* and *"a plain white wall with
+   soft even daylight"*. This does the most to stop backgrounds changing and stray
+   objects or logos appearing.
+4. **Test one chunk first:** use batch count 1 and check lip sync, identity and
+   background in `output/h3_longform/<name>_v2/chunk_0000.mp4`.
+5. Set `chunk_index` back to 0, then queue with a batch count of **at least the number
+   of chunks**, roughly audio seconds ÷ 8, plus margin. Surplus items are skipped in
    milliseconds.
-5. The last chunk writes `output/<audio name>.mp4` and clears the queue.
+6. The last chunk writes `output/<audio name>_v2.mp4` and clears the queue.
 
 **Resume** after an interruption: set `chunk_index` to 0 and queue again. Finished
 chunks are skipped.
@@ -227,14 +237,16 @@ ComfyUI's own examples are under **Workflow → Browse Templates → Video → M
 needs `DOWNLOAD_REF2VA=1`.
 
 > `setup.sh` skips existing workflows, so a workflow you edited on the pod is never
-> overwritten on reboot. The flip side is that pushing an updated workflow to this
-> repo won't reach an existing volume until you delete the old file from
-> `ComfyUI/user/default/workflows/`.
+> overwritten on reboot. The `_v2` workflows have new names, so they appear next
+> to the earlier `minimax_h3_long_video_workflow`, `minimax_h3_fast_workflow` and
+> `minimax_h3_fast_draft_workflow`. Delete those three from
+> `ComfyUI/user/default/workflows/`: they use a mismatched LoRA and the older prompt.
+> The `_v2` sessions never reuse chunks rendered by the earlier workflows.
 
 ### How the workflow works
 
 - By default, the portrait is center-cropped to the canvas, then pinned as the
-  **first and last** frame of every chunk to limit identity drift. The presenter
+  **first and last** frame of every chunk to limit identity drift. The person
   returns to the portrait pose at each boundary; cuts in pauses may help hide this.
   Optional motion carry replaces the opening portrait after chunk 0 with a short
   clip from the previous chunk (see below).
@@ -243,73 +255,99 @@ needs `DOWNLOAD_REF2VA=1`.
 - The final video uses your **original** audio track, encoded as AAC, rather than
   H3's reconstruction. Chunk positions share a 24 fps timeline to avoid cumulative
   timing drift; model lip-sync quality still needs testing.
-- **Turbo LoRA** is on by default (8 steps). Switch it off for 20 steps without the
-  LoRA, which gives the most quality and runs about 2.5× slower per chunk.
-- Describe delivery and motion in the prompt, not appearance. The prompt already
-  follows MiniMax's FL2VA prompt format, and the per-chunk `alignment` line is added
-  for you.
+- **Turbo LoRA** is on by default: the 8-step **768p** LoRA at its trained
+  video/audio shift of 6/3. Switch it off for 20 steps of the base model at its
+  default 12/3, which gives the most quality and runs about 2.5× slower per chunk.
+- **The prompt is generated per chunk** by the `H3 Longform: Talking-Head Prompt`
+  node, in the exact structure of MiniMax's
+  [prompt guide](https://huggingface.co/MiniMaxAI/MiniMax-H3/blob/main/docs/VIDEO_PROMPT_WRITING_GUIDE_base_en.md):
+  the FL2VA alignment line, then `integrated_multimodal_description`,
+  `overall_soundscape` and `non_diegetic_music`. It refers to the portraits as
+  Picture 1 and Picture 2, the labels the text encoder actually gives them.
 
-### MiniMax H3 Fast
+### Why backgrounds changed and logos appeared
 
-**For less GPU work, start with `minimax_h3_fast_draft_workflow`.** It uses
-**544 x 544, four steps** and the already installed non-768p FL2V Turbo v1.0 LoRA.
-The [LoRA authors](https://github.com/ModelTC/Minimax-H3-Turbo) recommend either
-eight or four inference steps for that model, with video/audio shifts **12/3**.
-The `8step` in its filename is expected even when running this four-step preset.
+H3 anchors only the first and last frame of each chunk; every frame between them is
+generated. The earlier workflows left that stretch loosely specified:
 
-| Workflow | Canvas | Sampling steps | Output suffix |
-|---|---|---|---|
-| `minimax_h3_fast_draft_workflow` | 544 x 544 | 4 | `_fast_draft` |
-| `minimax_h3_fast_workflow` | 768 x 768 | 4 | `_fast` |
-| `minimax_h3_long_video_workflow` | 768 x 768 | 8 with Turbo on | none |
+| Earlier workflows | Effect | `_v2` workflows |
+|---|---|---|
+| Standard ran the **544p-trained** Turbo LoRA at 768 × 768, with the base 12/3 shift | Distilled LoRAs tend to lose detail and consistency away from their training resolution and shift | 8-step **768p** LoRA at its trained 6/3 shift |
+| Prompt never described the background, only "match the reference pictures" | The model filled the background in from its training data | You name the background; the prompt holds it fixed and allows one person only |
+| Called the person a "presenter" | Suggests broadcast footage, with channel logos, lower-thirds and studio sets | Neutral "person" wording; the prompt rules out text, captions, logos and graphics |
+| `non_diegetic_music` field missing | Doesn't match the three-field format H3 was trained on | All three fields; music `N/A` |
+| 15 s chunks | 15 s between anchors | 10 s chunks |
+| `res_multistep` sampler on the standard workflow | Not what the Turbo LoRAs were distilled with | `euler`, as the LoRA authors specify |
 
-Draft renders about **half as many pixels per frame** as the other two. Its
-pixel-count times sampling-step count is about one quarter of the standard
-eight-step preset; that is a workload comparison, **not a measured 4x speedup**.
-The image has less detail and is not upscaled. Loading, text/image encoding and
-offloading can still dominate runtime. All presets keep 24 fps, the complete
-voiceover, portrait anchors, resume and stitching. Draft keeps the same chunk
-duration to avoid adding extra prompt encoding and boundary/padding work.
+If something still appears, make `background` more specific, lower `max_seconds` on
+Split to 8, and use a portrait with a plain, evenly lit background. Signs, screens
+and text in the portrait itself tend to animate.
 
-Draft needs **no additional model downloads** on a default installation. Keep
-`DOWNLOAD_TURBO_LORA=1`. On an existing pod, restart with the same start command
-to install the new `minimax_h3_fast_draft_workflow` sidebar entry. Its chunks and
-final video use `_fast_draft`, so earlier renders stay separate. Test one chunk;
-draft speed, lip sync and identity have not been validated on a GPU.
+### Workflows
 
-Open **`minimax_h3_fast_workflow`** in the Workflows sidebar for the simpler,
-four-step version. Upload your portrait and voiceover, test one chunk, then queue
-the remaining chunks as above. It keeps the original audio, portrait anchors,
-optional motion carry, resume and automatic stitching.
+| Workflow | Canvas | LoRA (steps, shift) | Sparse attention | Output suffix |
+|---|---|---|---|---|
+| `minimax_h3_long_video_v2` | 768 × 768 | 8-step 768p (8, 6/3); Turbo off: base 20 steps, 12/3 | bypassed, Ctrl+B to enable | `_v2` |
+| `minimax_h3_fast_v2` | 768 × 768 | 4-step 768p (4, 6/3) | on | `_fast_v2` |
+| `minimax_h3_fast_draft_v2` | 544 × 544 | 8-step 544p in 4-step mode (4, 12/3) | on | `_draft_v2` |
 
-Fast uses the dedicated **FL2V Turbo 4-step 768p LoRA**, strength 1, Euler sampler,
-simple scheduler, denoise 1, and video/audio sigma shifts **6/3**, following the
-[LoRA authors' settings](https://github.com/ModelTC/Minimax-H3-Turbo).
-Setup automatically downloads this additional 2 GB file; it reuses the same
-diffusion model, text encoder and VAEs. It does not need the Ref2VA models.
+All three use the same pipeline: portrait anchors, generated prompt, pinned
+voiceover, resume, stitching, the INT8 attention backend and `euler`. Every LoRA
+and shift pairing comes from the
+[LoRA authors' table](https://github.com/ModelTC/Minimax-H3-Turbo). **Draft** renders
+about half the pixels per frame of the 768 workflows. Use it to check timing and
+framing, then render the final with Fast or the standard workflow. The Fast graphs
+collapse model and sampling nodes below the main controls: double-click one to
+inspect it. Fewer boxes on screen do not reduce model work.
 
-The graph has **27 nodes instead of 36**, with model and sampling nodes collapsed
-below the main controls. Double-click a collapsed node to inspect it. The speed
-change comes from four sampling steps instead of eight; fewer boxes on screen
-do not reduce model work. Model loading, Qwen text/image encoding, VAE work and
-stitching still take time. Total render speed has not been benchmarked against LTX.
-
-The default canvas stays **768 x 768** to match the standard avatar workflow's
-workload. The LoRA was trained at 1344 x 768; that landscape size is also available
-through Width/Height, with more pixels to render. Four-step lip sync, identity and
-motion continuity need GPU testing, and quality may differ from the standard
-eight-step workflow. Compare one chunk before a full render.
-
-Fast writes `output/<audio name>_fast.mp4` and stores chunks in
-`output/h3_longform/<audio name>_fast/`, so it cannot reuse standard-workflow chunks
-by accident. Change `name_suffix` on the output-name node to start a fresh session
-when changing inputs or settings (for example `_fast_take2`).
+The LoRAs were trained at 1344 × 768 (768p) and at mixed 544p aspect ratios.
+Width/Height accept any 768-short-edge canvas (see the Resolution note in the
+graph). Each workflow's session suffix keeps its chunks separate from the others.
+Change `name_suffix` on the output-name node to start a fresh take when changing
+inputs or settings, for example `_v2_take2`.
 
 **Existing pod:** restart it using the same start command. Setup updates the node
-pack, downloads the new LoRA if missing and installs the new Fast workflow without
-overwriting your saved standard workflow. Refresh ComfyUI after startup completes.
-For a manual update, install both the updated node pack and the Fast JSON, and
-download the LoRA; importing just the graph into an old installation is insufficient.
+pack, downloads the 768p 8-step LoRA and installs the `_v2` workflows next to your
+saved ones. Refresh ComfyUI after startup completes. For a manual update, install
+both the updated node pack (the workflows need its new prompt node) and the JSON
+files, and download the LoRA.
+
+### Acceleration
+
+Everything below ships in the base image's ComfyUI 0.35; nothing extra is installed.
+
+- **INT8 attention** (`Model Attention Backend` → `comfy kitchen attention`): quantized
+  attention, the same idea as SageAttention, on in all three workflows. If the kernel
+  isn't available on a GPU, ComfyUI falls back to PyTorch attention and logs a
+  warning. Set it to `pytorch attention` to compare quality.
+- **Sol-Attn sparse attention** (`Model Sparse Attention`): a training-free adaptive
+  sparse attention. It skips low-weight attention blocks on long sequences, from 20%
+  into sampling onward. Attention to the text, the pinned portraits and the
+  voiceover stays exact for every query, and the generated audio stays dense. It is
+  on in Fast and Draft and bypassed in the standard workflow, which is the quality
+  reference.
+- **Four-step LoRAs** in Fast and Draft; eight steps in the standard workflow.
+
+Speed-ups have **not been measured on a pod**; compare one chunk with and without.
+
+**Not used, and why:**
+
+- **FastH3** (FastVideo's distilled checkpoint): its model card states that FL2VA
+  was not distilled. It is text-to-video only and can't hold the portrait anchors.
+- **EasyCache**: it reuses results across neighbouring sampling steps, so it saves
+  little at 4–8 steps and risks the drift this workflow is trying to remove.
+- **3-step LoRA**: none has been published for FL2VA.
+- **torch.compile**: each chunk length is a new shape, so compile time would recur.
+
+**CUDA 13 image (optional, not yet tested here).** Comfy-Org recommends the
+`int8_convrot` weights with PyTorch cu130. comfy-kitchen's prebuilt CUDA kernels need
+CUDA runtime ≥ 13.0 and driver r580+; on the cu128 image they fall back to Triton or
+PyTorch, which is slower. `runpod/comfyui:1.4.0-comfyuiv0.35.0-cuda13.0` is the same
+ComfyUI build on CUDA 13.0, and its CUDA runtime needs driver r580+ on the host. Setup
+copies ComfyUI and its virtualenv onto the volume only once, so switching images
+only takes effect with a **fresh volume**. Otherwise rename
+`/workspace/runpod-slim/ComfyUI` first; models can then be moved back. Test one
+chunk on the new image before switching a production template.
 
 ### Optional motion carry (experimental)
 
@@ -339,9 +377,6 @@ Test at least two chunks to compare joins. Frame accounting, audio slicing, and
 stitching are tested locally with synthetic frames; H3 motion continuity, face
 identity, and lip-sync quality have **not** been tested on a GPU.
 
-For an existing pod, update the custom node pack and restart ComfyUI, then import
-the new workflow JSON. Setup preserves saved workflows, so rebooting alone will
-not replace the old graph.
 
 ## GPU guidance
 
@@ -349,9 +384,9 @@ These are estimates from the file sizes. **They haven't been measured on a pod y
 
 | GPU | Notes |
 |---|---|
-| 80–96 GB (A100 / H100 / RTX PRO 6000) | Comfortable at 15 s chunks. Blackwell cards run the nvfp4 text encoder natively |
-| 48 GB (A6000 / L40S) | Should work. If a 15 s chunk runs out of memory, lower `max_seconds` on Split (for example to 10) |
-| 24 GB | Not recommended for 768p at 15 s |
+| 80–96 GB (A100 / H100 / RTX PRO 6000) | Comfortable at the default 10 s chunks. Blackwell cards run the nvfp4 text encoder natively |
+| 48 GB (A6000 / L40S) | Should work. If a chunk runs out of memory, lower `max_seconds` on Split (for example to 8) |
+| 24 GB | Not recommended for 768p |
 
 If the text encoder won't load on your GPU, set `H3_TEXT_ENCODER=int8` and choose that
 file in the workflow's CLIPLoader.
@@ -362,7 +397,7 @@ file in the workflow's CLIPLoader.
 |---|---|---|
 | `HF_TOKEN` | *(empty)* | Not required (the repo is ungated). It raises Hugging Face rate limits |
 | `H3_TEXT_ENCODER` | `nvfp4` | `int8` downloads the 27 GB int8 Qwen3-VL encoder instead |
-| `DOWNLOAD_TURBO_LORA` | `1` | Leave this at `1`: downloads the LoRA used by standard and Fast Draft. The standard loader is validated even with Turbo off. The dedicated 768p Fast LoRA always downloads separately |
+| `DOWNLOAD_TURBO_LORA` | `1` | Leave this at `1`: downloads the 544p LoRA used by Fast Draft. The 768p LoRAs used by the standard and Fast workflows always download |
 | `DOWNLOAD_REF2VA` | `0` | `1` also pulls the Ref2VA model and LoRA for ComfyUI's R2V template |
 | `JUPYTER_NO_AUTH` | `1` | Disables Jupyter login (anyone with the URL gets a shell). Set `0` to keep the image's auth |
 | `JUPYTER_PASSWORD` | *(empty)* | Jupyter token, used when `JUPYTER_NO_AUTH=0` |
@@ -370,8 +405,8 @@ file in the workflow's CLIPLoader.
 | `COMFYUI_PATH` | `/workspace/runpod-slim/ComfyUI` | Leave unset; must match the base image's fixed startup path |
 | `HF_HOME` | `/workspace/.cache/huggingface` | Keeps the HF cache on the volume, not the 5 GB container disk |
 
-ComfyUI runs from its own virtualenv (`$COMFYUI_PATH/.venv-cu128`). If you install
-anything by hand, use that interpreter:
+ComfyUI runs from its own virtualenv (`$COMFYUI_PATH/.venv-cu128` on the cu128
+image). If you install anything by hand, use that interpreter:
 
 ```bash
 /workspace/runpod-slim/ComfyUI/.venv-cu128/bin/python -m pip install <package>
@@ -384,19 +419,19 @@ anything by hand, use that interpreter:
 ├── README.md
 ├── TEMPLATE_README.md                     # paste into the public template's README tab
 ├── custom_nodes/
-│   └── comfyui-h3-longform/               # Split / Carry / Write + Stitch / Name From Audio File
+│   └── comfyui-h3-longform/               # Split / Carry / Write + Stitch / Name / Talking-Head Prompt
 ├── tools/
 │   ├── build_workflow.py                  # generates all workflow JSONs; re-run after edits
-│   ├── test_fast_workflow.py              # Fast graph and automatic model download checks
+│   ├── test_fast_workflow.py              # all three graphs and automatic model download checks
 │   ├── test_longform.py                   # CPU + ffmpeg regression checks
 │   ├── test_storage.py                    # Network Volume mount and filesystem checks
 │   ├── test_boot.py                       # full setup with image/network fixtures
 │   ├── test_jupyter.py                    # auth patch and real Jupyter Server smoke test
 │   └── test_setup.py                      # Bash download checks using local fixtures
 └── workflows/
-    ├── minimax_h3_long_video_workflow.json
-    ├── minimax_h3_fast_workflow.json
-    └── minimax_h3_fast_draft_workflow.json
+    ├── minimax_h3_long_video_v2.json
+    ├── minimax_h3_fast_v2.json
+    └── minimax_h3_fast_draft_v2.json
 ```
 
 ## References
@@ -404,4 +439,5 @@ anything by hand, use that interpreter:
 - ComfyUI guide: https://docs.comfy.org/tutorials/video/minimax/minimax-h3
 - Weights (ComfyUI format): https://huggingface.co/Comfy-Org/MiniMax-H3
 - Original release, licence and prompt guides: https://huggingface.co/MiniMaxAI/MiniMax-H3
+- Turbo LoRAs, their resolutions and shifts: https://github.com/ModelTC/Minimax-H3-Turbo
 - Node source: `comfy_extras/nodes_minimax_h3.py` in ComfyUI
