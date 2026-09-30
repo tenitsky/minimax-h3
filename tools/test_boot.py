@@ -198,15 +198,15 @@ cuda = SimpleNamespace(is_available=lambda: os.environ.get("BOOT_GPU", "1") == "
         self.assertEqual(len(self.downloads()), 7)
         self.assertEqual({p.name for p in (self.comfy / "models").rglob("*.safetensors")}, MODEL_NAMES)
         self.assertTrue((self.comfy / "custom_nodes/comfyui-h3-longform/__init__.py").is_file())
-        installed_workflow = self.comfy / "user/default/workflows/minimax_h3_long_video_v2.json"
+        installed_workflow = self.comfy / "user/default/workflows/minimax_h3_talking_head.json"
         self.assertEqual(json.loads(installed_workflow.read_text()),
-                         json.loads((ROOT / "workflows/minimax_h3_long_video_v2.json").read_text()))
-        installed_fast = self.comfy / "user/default/workflows/minimax_h3_fast_v2.json"
+                         json.loads((ROOT / "workflows/minimax_h3_talking_head.json").read_text()))
+        installed_fast = self.comfy / "user/default/workflows/minimax_h3_talking_head_fast.json"
         self.assertEqual(json.loads(installed_fast.read_text()),
-                         json.loads((ROOT / "workflows/minimax_h3_fast_v2.json").read_text()))
-        installed_draft = self.comfy / "user/default/workflows/minimax_h3_fast_draft_v2.json"
+                         json.loads((ROOT / "workflows/minimax_h3_talking_head_fast.json").read_text()))
+        installed_draft = self.comfy / "user/default/workflows/minimax_h3_talking_head_draft.json"
         self.assertEqual(json.loads(installed_draft.read_text()),
-                         json.loads((ROOT / "workflows/minimax_h3_fast_draft_v2.json").read_text()))
+                         json.loads((ROOT / "workflows/minimax_h3_talking_head_draft.json").read_text()))
 
         state = json.loads(self.handoff.read_text())
         self.assertEqual(state["COMFYUI_PATH"], str(self.comfy))

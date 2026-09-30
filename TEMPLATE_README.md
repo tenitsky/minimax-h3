@@ -22,7 +22,7 @@ Jupyter has no login by default. Anyone with its accessible URL can run commands
 ## Generate a video
 
 1. Open ComfyUI's Workflows sidebar.
-2. Select **minimax_h3_fast_v2** (768, 4 steps), **minimax_h3_fast_draft_v2** (544, 4 steps) or **minimax_h3_long_video_v2** (768, 8 steps).
+2. Select **minimax_h3_talking_head_fast** (768, 4 steps), **minimax_h3_talking_head_draft** (544, 4 steps) or **minimax_h3_talking_head** (768, 8 steps).
 3. Load your portrait and voiceover.
 4. In **Talking-Head Prompt**, describe the person and background seen in the portrait. This keeps the background steady.
 5. Test one chunk at batch count 1.

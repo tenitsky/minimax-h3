@@ -1,5 +1,5 @@
 {
- "id": "6e1a9b37-2c55-4f0e-8a31-b7d4c9e0f215",
+ "id": "b3f7d0c4-81a9-4e62-9c5d-2a6e7f1b8d93",
  "revision": 0,
  "last_node_id": 77,
  "last_link_id": 47,
@@ -23,9 +23,9 @@
    "properties": {
     "Node name for S&R": "MarkdownNote"
    },
-   "title": "MiniMax H3 Fast - start here",
+   "title": "MiniMax H3 Fast Draft - lower detail, less GPU work",
    "widgets_values": [
-    "# MiniMax H3 Fast\n\nDedicated **4-step 768p Turbo** LoRA (video/audio shift 6/3), INT8 attention and Sol-Attn sparse attention. Same portrait + voiceover, automatic chunks, resume and stitching as the standard workflow.\n\n1. Upload **Portrait** and **Voiceover**.\n2. In **Talking-Head Prompt**, describe the `subject` and `background` you see in the portrait. This is what keeps the background from changing.\n3. Test one chunk (batch count 1). Then set chunk_index to **0** and queue audio seconds / 8, plus a margin. The final chunk stitches `output/<audio name>_fast_v2.mp4`.\n\nChange `name_suffix` on the output-name node to start a fresh take when changing inputs or settings.\n\nModel and sampling nodes below are collapsed: double-click to inspect them. To compare quality, bypass **Model Sparse Attention** (Ctrl+B) or set the attention backend to `pytorch attention`.\n\nLicence and full instructions: https://github.com/tenitsky/minimax-h3\n"
+    "# MiniMax H3 Fast Draft\n\n**544 x 544, four steps** - the 544p-trained Turbo LoRA in its supported four-step mode (video/audio shift 12/3), INT8 attention and Sol-Attn sparse attention. About half the pixels per frame of the 768 workflows: use it to check timing and framing, then render the final with Fast or the standard workflow.\n\n1. Upload **Portrait** and **Voiceover**.\n2. In **Talking-Head Prompt**, describe the `subject` and `background` you see in the portrait.\n3. Test one chunk (batch count 1). Then set chunk_index to **0** and queue audio seconds / 8, plus a margin. The final chunk stitches `output/<audio name>_draft.mp4`.\n\nThe LoRA filename says 8step; four-step inference is intentional and supported by its authors.\n\nModel and sampling nodes below are collapsed: double-click to inspect them.\n\nLicence and full instructions: https://github.com/tenitsky/minimax-h3\n"
    ],
    "color": "#222",
    "bgcolor": "#000"
@@ -209,7 +209,7 @@
    },
    "title": "Width",
    "widgets_values": [
-    768,
+    544,
     "fixed"
    ]
   },
@@ -245,7 +245,7 @@
    },
    "title": "Height",
    "widgets_values": [
-    768,
+    544,
     "fixed"
    ]
   },
@@ -401,7 +401,7 @@
    "widgets_values": [
     ".mp4",
     "",
-    "_fast_v2"
+    "_draft"
    ]
   },
   {
@@ -546,15 +546,15 @@
     "cnr_id": "comfy-core",
     "models": [
      {
-      "name": "minimax_h3_fl2v_turbo_4step_v1.0_768p_comfyui_bf16.safetensors",
-      "url": "https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/loras/minimax_h3_fl2v_turbo_4step_v1.0_768p_comfyui_bf16.safetensors",
+      "name": "minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors",
+      "url": "https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/loras/minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors",
       "directory": "loras"
      }
     ]
    },
-   "title": "Fast: 4-step 768p Turbo LoRA",
+   "title": "544p Turbo v1.0 (four-step mode)",
    "widgets_values": [
-    "minimax_h3_fl2v_turbo_4step_v1.0_768p_comfyui_bf16.safetensors",
+    "minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors",
     1
    ]
   },
@@ -596,9 +596,9 @@
     "Node name for S&R": "MiniMaxH3SigmaShift",
     "cnr_id": "comfy-core"
    },
-   "title": "Turbo sigma shift (video 6 / audio 3)",
+   "title": "Turbo sigma shift (video 12 / audio 3)",
    "widgets_values": [
-    6.0,
+    12.0,
     3.0
    ]
   },
@@ -889,8 +889,8 @@
    "title": "Crop portrait to canvas",
    "widgets_values": [
     "lanczos",
-    768,
-    768,
+    544,
+    544,
     "center"
    ]
   },
@@ -1069,8 +1069,8 @@
    },
    "widgets_values": [
     "",
-    768,
-    768,
+    544,
+    544,
     124
    ]
   },
@@ -1532,8 +1532,8 @@
     0,
     1,
     123,
-    "run1_fast_v2",
-    "h3_fast_v2.mp4",
+    "run1_draft",
+    "h3_talking_head_draft.mp4",
     true,
     0
    ]

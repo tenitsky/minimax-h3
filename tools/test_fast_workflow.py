@@ -19,15 +19,15 @@ FAST_LORA = "minimax_h3_fl2v_turbo_4step_v1.0_768p_comfyui_bf16.safetensors"
 
 class FastWorkflowTests(unittest.TestCase):
     builder_function = "build_fast"
-    workflow_filename = "minimax_h3_fast_v2.json"
+    workflow_filename = "minimax_h3_talking_head_fast.json"
     lora_filename = FAST_LORA
     lora_url = builder.HF + "loras/"
     video_shift = 6.0
     steps = 4
     sparse_enabled = True
     canvas = 768
-    name_suffix = "_fast_v2"
-    fallback_names = ["run1_fast_v2", "h3_fast_v2.mp4"]
+    name_suffix = "_fast"
+    fallback_names = ["run1_fast", "h3_talking_head_fast.mp4"]
 
     def setUp(self):
         self.workflow = getattr(builder, self.builder_function)()
@@ -253,23 +253,23 @@ class FastWorkflowTests(unittest.TestCase):
 
 class FastDraftWorkflowTests(FastWorkflowTests):
     builder_function = "build_fast_draft"
-    workflow_filename = "minimax_h3_fast_draft_v2.json"
+    workflow_filename = "minimax_h3_talking_head_draft.json"
     lora_filename = "minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors"
     video_shift = 12.0
     canvas = 544
-    name_suffix = "_draft_v2"
-    fallback_names = ["run1_draft_v2", "h3_draft_v2.mp4"]
+    name_suffix = "_draft"
+    fallback_names = ["run1_draft", "h3_talking_head_draft.mp4"]
 
 
 class StandardWorkflowTests(FastWorkflowTests):
     builder_function = "build"
-    workflow_filename = "minimax_h3_long_video_v2.json"
+    workflow_filename = "minimax_h3_talking_head.json"
     lora_filename = "minimax_h3_fl2v_turbo_8step_v1.0_768p_comfyui_bf16.safetensors"
     lora_url = builder.TURBO_HF
     steps = 8
     sparse_enabled = False
-    name_suffix = "_v2"
-    fallback_names = ["run1_v2", "h3_longform_v2.mp4"]
+    name_suffix = ""
+    fallback_names = ["run1", "h3_talking_head.mp4"]
 
     def test_lora_shift_and_accelerated_model_reach_scheduler_and_guider(self):
         shift = self.assert_model_path()

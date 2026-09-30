@@ -232,7 +232,7 @@ filesystem or run H3 generation on a GPU.
 ## After it boots
 
 1. Open ComfyUI (port 8188), then open the **Workflows** sidebar and choose
-   **`minimax_h3_long_video_v2`** (or one of the Fast versions below).
+   **`minimax_h3_talking_head`** (or one of the Fast versions below).
 2. Set **Load Portrait** and **Load Voiceover**. The output is named after the audio
    file automatically.
 3. In **Talking-Head Prompt**, describe the `subject` and the `background` you can
@@ -241,11 +241,11 @@ filesystem or run H3 generation on a GPU.
    soft even daylight"*. This does the most to stop backgrounds changing and stray
    objects or logos appearing.
 4. **Test one chunk first:** use batch count 1 and check lip sync, identity and
-   background in `output/h3_longform/<name>_v2/chunk_0000.mp4`.
+   background in `output/h3_longform/<name>/chunk_0000.mp4`.
 5. Set `chunk_index` back to 0, then queue with a batch count of **at least the number
    of chunks**, roughly audio seconds ÷ 8, plus margin. Surplus items are skipped in
    milliseconds.
-6. The last chunk writes `output/<audio name>_v2.mp4` and clears the queue.
+6. The last chunk writes `output/<audio name>.mp4` and clears the queue.
 
 **Resume** after an interruption: set `chunk_index` to 0 and queue again. Finished
 chunks are skipped.
@@ -255,11 +255,9 @@ ComfyUI's own examples are under **Workflow → Browse Templates → Video → M
 needs `DOWNLOAD_REF2VA=1`.
 
 > `setup.sh` skips existing workflows, so a workflow you edited on the pod is never
-> overwritten on reboot. The `_v2` workflows have new names, so they appear next
-> to the earlier `minimax_h3_long_video_workflow`, `minimax_h3_fast_workflow` and
-> `minimax_h3_fast_draft_workflow`. Delete those three from
-> `ComfyUI/user/default/workflows/`: they use a mismatched LoRA and the older prompt.
-> The `_v2` sessions never reuse chunks rendered by the earlier workflows.
+> overwritten on reboot. The flip side is that an updated workflow in this repo won't
+> reach an existing volume until you delete the old file from
+> `ComfyUI/user/default/workflows/` and restart.
 
 ### How the workflow works
 
@@ -283,19 +281,21 @@ needs `DOWNLOAD_REF2VA=1`.
   `overall_soundscape` and `non_diegetic_music`. It refers to the portraits as
   Picture 1 and Picture 2, the labels the text encoder actually gives them.
 
-### Why backgrounds changed and logos appeared
+### Keeping the background steady
 
 H3 anchors only the first and last frame of each chunk; every frame between them is
-generated. The earlier workflows left that stretch loosely specified:
+generated, and the model fills whatever the prompt leaves open: a changing backdrop,
+a lower-third, a channel logo. The workflows close those gaps:
 
-| Earlier workflows | Effect | `_v2` workflows |
-|---|---|---|
-| Standard ran the **544p-trained** Turbo LoRA at 768 × 768, with the base 12/3 shift | Distilled LoRAs tend to lose detail and consistency away from their training resolution and shift | 8-step **768p** LoRA at its trained 6/3 shift |
-| Prompt never described the background, only "match the reference pictures" | The model filled the background in from its training data | You name the background; the prompt holds it fixed and allows one person only |
-| Called the person a "presenter" | Suggests broadcast footage, with channel logos, lower-thirds and studio sets | Neutral "person" wording; the prompt rules out text, captions, logos and graphics |
-| `non_diegetic_music` field missing | Doesn't match the three-field format H3 was trained on | All three fields; music `N/A` |
-| 15 s chunks | 15 s between anchors | 10 s chunks |
-| `res_multistep` sampler on the standard workflow | Not what the Turbo LoRAs were distilled with | `euler`, as the LoRA authors specify |
+- **You describe the background.** The prompt names it and holds it unchanged, allows
+  one person only, and rules out text, captions, logos and graphics.
+- **Neutral wording.** The person is never called a "presenter", which suggests
+  broadcast footage and its graphics.
+- **MiniMax's exact prompt format**, with all three fields (`non_diegetic_music: N/A`).
+- **10 s chunks** instead of H3's 15 s ceiling, so less is generated between anchors.
+- **Each Turbo LoRA runs at the resolution and shift it was distilled at**, with the
+  `euler` sampler its authors specify. Distilled LoRAs tend to lose detail and
+  consistency away from those settings.
 
 If something still appears, make `background` more specific, lower `max_seconds` on
 Split to 8, and use a portrait with a plain, evenly lit background. Signs, screens
@@ -305,9 +305,9 @@ and text in the portrait itself tend to animate.
 
 | Workflow | Canvas | LoRA (steps, shift) | Sparse attention | Output suffix |
 |---|---|---|---|---|
-| `minimax_h3_long_video_v2` | 768 × 768 | 8-step 768p (8, 6/3); Turbo off: base 20 steps, 12/3 | bypassed, Ctrl+B to enable | `_v2` |
-| `minimax_h3_fast_v2` | 768 × 768 | 4-step 768p (4, 6/3) | on | `_fast_v2` |
-| `minimax_h3_fast_draft_v2` | 544 × 544 | 8-step 544p in 4-step mode (4, 12/3) | on | `_draft_v2` |
+| `minimax_h3_talking_head` | 768 × 768 | 8-step 768p (8, 6/3); Turbo off: base 20 steps, 12/3 | bypassed, Ctrl+B to enable | none |
+| `minimax_h3_talking_head_fast` | 768 × 768 | 4-step 768p (4, 6/3) | on | `_fast` |
+| `minimax_h3_talking_head_draft` | 544 × 544 | 8-step 544p in 4-step mode (4, 12/3) | on | `_draft` |
 
 All three use the same pipeline: portrait anchors, generated prompt, pinned
 voiceover, resume, stitching, the INT8 attention backend and `euler`. Every LoRA
@@ -322,45 +322,13 @@ The LoRAs were trained at 1344 × 768 (768p) and at mixed 544p aspect ratios.
 Width/Height accept any 768-short-edge canvas (see the Resolution note in the
 graph). Each workflow's session suffix keeps its chunks separate from the others.
 Change `name_suffix` on the output-name node to start a fresh take when changing
-inputs or settings, for example `_v2_take2`.
+inputs or settings, for example `_take2`.
 
 **Existing pod:** restart it using the same start command. Setup updates the node
-pack, downloads the 768p 8-step LoRA and installs the `_v2` workflows next to your
-saved ones. Refresh ComfyUI after startup completes. For a manual update, install
-both the updated node pack (the workflows need its new prompt node) and the JSON
-files, and download the LoRA.
-
-### Acceleration
-
-Everything below ships in the base image's ComfyUI 0.35; nothing extra is installed.
-
-- **INT8 attention** (`Model Attention Backend` → `comfy kitchen attention`): quantized
-  attention, the same idea as SageAttention, on in all three workflows. If the kernel
-  isn't available on a GPU, ComfyUI falls back to PyTorch attention and logs a
-  warning. Set it to `pytorch attention` to compare quality.
-- **Sol-Attn sparse attention** (`Model Sparse Attention`): a training-free adaptive
-  sparse attention. It skips low-weight attention blocks on long sequences, from 20%
-  into sampling onward. Attention to the text, the pinned portraits and the
-  voiceover stays exact for every query, and the generated audio stays dense. It is
-  on in Fast and Draft and bypassed in the standard workflow, which is the quality
-  reference.
-- **Four-step LoRAs** in Fast and Draft; eight steps in the standard workflow.
-
-Speed-ups have **not been measured on a pod**; compare one chunk with and without.
-
-**Not used, and why:**
-
-- **FastH3** (FastVideo's distilled checkpoint): its model card states that FL2VA
-  was not distilled. It is text-to-video only and can't hold the portrait anchors.
-- **EasyCache**: it reuses results across neighbouring sampling steps, so it saves
-  little at 4–8 steps and risks the drift this workflow is trying to remove.
-- **3-step LoRA**: none has been published for FL2VA.
-- **torch.compile**: each chunk length is a new shape, so compile time would recur.
-
-**CUDA 13.** The template uses the CUDA 13.0 image, as Comfy-Org recommends for the
-`int8_convrot` weights: comfy-kitchen's prebuilt CUDA kernels need CUDA ≥ 13.0 and
-driver r580+, and fall back to slower Triton/PyTorch paths on CUDA 12.8. See the
-template settings above for the deployment filter and moving an existing volume.
+pack and downloads any missing LoRA. Workflows already on the volume are kept, so
+delete the old ones first to receive the current versions. For a manual update,
+install both the node pack (the workflows need its Talking-Head Prompt node) and
+the JSON files, and download the LoRAs.
 
 ### Optional motion carry (experimental)
 
@@ -443,9 +411,9 @@ never install `torch` into it: PyTorch comes from the image.
 │   ├── test_jupyter.py                    # auth patch and real Jupyter Server smoke test
 │   └── test_setup.py                      # Bash download checks using local fixtures
 └── workflows/
-    ├── minimax_h3_long_video_v2.json
-    ├── minimax_h3_fast_v2.json
-    └── minimax_h3_fast_draft_v2.json
+    ├── minimax_h3_talking_head.json
+    ├── minimax_h3_talking_head_fast.json
+    └── minimax_h3_talking_head_draft.json
 ```
 
 ## References

@@ -123,9 +123,9 @@ Drop files in `ComfyUI/input/`, or upload them through the nodes.
 
 ## Running a long render
 
-1. Test one chunk (batch count 1) and check `output/h3_longform/<audio name>_v2/chunk_0000.mp4`.
+1. Test one chunk (batch count 1) and check `output/h3_longform/<audio name>/chunk_0000.mp4`.
 2. Set `chunk_index` back to **0** and queue with a **batch count of at least audio seconds / 8**, plus a margin. Surplus items are skipped in milliseconds.
-3. The last chunk stitches everything into `output/<audio name>_v2.mp4` and clears the queue.
+3. The last chunk stitches everything into `output/<audio name>.mp4` and clears the queue.
 
 Interrupted? Set `chunk_index` back to 0 and queue again: finished chunks are skipped."""
 
@@ -135,7 +135,7 @@ Dedicated **4-step 768p Turbo** LoRA (video/audio shift 6/3), INT8 attention and
 
 1. Upload **Portrait** and **Voiceover**.
 2. In **Talking-Head Prompt**, describe the `subject` and `background` you see in the portrait. This is what keeps the background from changing.
-3. Test one chunk (batch count 1). Then set chunk_index to **0** and queue audio seconds / 8, plus a margin. The final chunk stitches `output/<audio name>_fast_v2.mp4`.
+3. Test one chunk (batch count 1). Then set chunk_index to **0** and queue audio seconds / 8, plus a margin. The final chunk stitches `output/<audio name>_fast.mp4`.
 
 Change `name_suffix` on the output-name node to start a fresh take when changing inputs or settings.
 
@@ -150,7 +150,7 @@ NOTE_DRAFT = """# MiniMax H3 Fast Draft
 
 1. Upload **Portrait** and **Voiceover**.
 2. In **Talking-Head Prompt**, describe the `subject` and `background` you see in the portrait.
-3. Test one chunk (batch count 1). Then set chunk_index to **0** and queue audio seconds / 8, plus a margin. The final chunk stitches `output/<audio name>_draft_v2.mp4`.
+3. Test one chunk (batch count 1). Then set chunk_index to **0** and queue audio seconds / 8, plus a margin. The final chunk stitches `output/<audio name>_draft.mp4`.
 
 The LoRA filename says 8step; four-step inference is intentional and supported by its authors.
 
@@ -161,21 +161,21 @@ Licence and full instructions: https://github.com/tenitsky/minimax-h3
 
 VARIANTS = {
     "standard": dict(
-        path="minimax_h3_long_video_v2.json", id="0d8c2f52-7f7e-4c1b-9d6c-5f2e91a4b3c0",
+        path="minimax_h3_talking_head.json", id="0d8c2f52-7f7e-4c1b-9d6c-5f2e91a4b3c0",
         canvas=768, lora=TURBO_768_8, lora_url=TURBO_HF, shift=(6.0, 3.0), steps=8,
-        switch=True, sparse=False, suffix="_v2",
-        fallback=["run1_v2", "h3_longform_v2.mp4"]),
+        switch=True, sparse=False, suffix="",
+        fallback=["run1", "h3_talking_head.mp4"]),
     "fast": dict(
-        path="minimax_h3_fast_v2.json", id="6e1a9b37-2c55-4f0e-8a31-b7d4c9e0f215",
+        path="minimax_h3_talking_head_fast.json", id="6e1a9b37-2c55-4f0e-8a31-b7d4c9e0f215",
         canvas=768, lora=TURBO_768_4, lora_url=HF + "loras/", shift=(6.0, 3.0), steps=4,
-        switch=False, sparse=True, suffix="_fast_v2",
-        fallback=["run1_fast_v2", "h3_fast_v2.mp4"], note=NOTE_FAST,
+        switch=False, sparse=True, suffix="_fast",
+        fallback=["run1_fast", "h3_talking_head_fast.mp4"], note=NOTE_FAST,
         title="MiniMax H3 Fast - start here"),
     "draft": dict(
-        path="minimax_h3_fast_draft_v2.json", id="b3f7d0c4-81a9-4e62-9c5d-2a6e7f1b8d93",
+        path="minimax_h3_talking_head_draft.json", id="b3f7d0c4-81a9-4e62-9c5d-2a6e7f1b8d93",
         canvas=544, lora=TURBO_544, lora_url=HF + "loras/", shift=(12.0, 3.0), steps=4,
-        switch=False, sparse=True, suffix="_draft_v2",
-        fallback=["run1_draft_v2", "h3_draft_v2.mp4"], note=NOTE_DRAFT,
+        switch=False, sparse=True, suffix="_draft",
+        fallback=["run1_draft", "h3_talking_head_draft.mp4"], note=NOTE_DRAFT,
         title="MiniMax H3 Fast Draft - lower detail, less GPU work"),
 }
 

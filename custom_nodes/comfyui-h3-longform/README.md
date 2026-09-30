@@ -17,11 +17,11 @@ item to the next.
 | **H3 Longform: Talking-Head Prompt** | Writes each chunk's full prompt in MiniMax's format from short `subject`, `background` and `delivery` descriptions, with the alignment line for that chunk's length and carry |
 
 The name node's optional `name_suffix` is appended to both names. The bundled
-workflows set `_v2`, `_fast_v2` and `_draft_v2`, keeping each one's chunks separate
-from the others and from renders made with earlier workflows. Change it when starting a new take with
+Fast and Draft workflows set `_fast` and `_draft`, keeping their chunks separate
+from the standard workflow's. Change it when starting a new take with
 different inputs or settings. Existing workflows default to an empty suffix.
 
-## Wiring (already done in the bundled `_v2` workflows)
+## Wiring (already done in the bundled workflows)
 
 - Split `audio_chunk` → Write `chunk_audio`
 - Split `guide_audio` → `MiniMaxH3AddGuide.audio` (frame_idx 0), including the carry lead-in

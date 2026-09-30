@@ -25,7 +25,7 @@
    },
    "title": "Note: Inputs + how to run",
    "widgets_values": [
-    "## Inputs\n\n- **Load Portrait** - one person facing the camera, face clearly visible, in front of the background you want to keep. It is pinned as the first and last frame of every chunk.\n- **Load Voiceover** - your speech track, any length. Mono is fine.\n- **Talking-Head Prompt** - describe the `subject` and the `background` you can see in the portrait, in a few concrete words. The node writes the full MiniMax-format prompt for every chunk.\n\nDrop files in `ComfyUI/input/`, or upload them through the nodes.\n\n## Running a long render\n\n1. Test one chunk (batch count 1) and check `output/h3_longform/<audio name>_v2/chunk_0000.mp4`.\n2. Set `chunk_index` back to **0** and queue with a **batch count of at least audio seconds / 8**, plus a margin. Surplus items are skipped in milliseconds.\n3. The last chunk stitches everything into `output/<audio name>_v2.mp4` and clears the queue.\n\nInterrupted? Set `chunk_index` back to 0 and queue again: finished chunks are skipped."
+    "## Inputs\n\n- **Load Portrait** - one person facing the camera, face clearly visible, in front of the background you want to keep. It is pinned as the first and last frame of every chunk.\n- **Load Voiceover** - your speech track, any length. Mono is fine.\n- **Talking-Head Prompt** - describe the `subject` and the `background` you can see in the portrait, in a few concrete words. The node writes the full MiniMax-format prompt for every chunk.\n\nDrop files in `ComfyUI/input/`, or upload them through the nodes.\n\n## Running a long render\n\n1. Test one chunk (batch count 1) and check `output/h3_longform/<audio name>/chunk_0000.mp4`.\n2. Set `chunk_index` back to **0** and queue with a **batch count of at least audio seconds / 8**, plus a margin. Surplus items are skipped in milliseconds.\n3. The last chunk stitches everything into `output/<audio name>.mp4` and clears the queue.\n\nInterrupted? Set `chunk_index` back to 0 and queue again: finished chunks are skipped."
    ],
    "color": "#222",
    "bgcolor": "#000"
@@ -531,7 +531,7 @@
    "widgets_values": [
     ".mp4",
     "",
-    "_v2"
+    ""
    ]
   },
   {
@@ -1855,8 +1855,8 @@
     0,
     1,
     123,
-    "run1_v2",
-    "h3_longform_v2.mp4",
+    "run1",
+    "h3_talking_head.mp4",
     true,
     0
    ]
