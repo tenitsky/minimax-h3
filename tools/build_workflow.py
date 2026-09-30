@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Generate workflows/minimax_h3_long_video_workflow.json.
+Generate the standard and Fast long-form workflow JSON files.
 
 The graph is written from code rather than exported from the UI so every link, slot
 and widget value is declared in one readable place and can be checked before a pod
@@ -24,6 +24,8 @@ TE = "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors"
 VIDEO_VAE = "minimax_h3_video_vae_int8_convrot.safetensors"
 AUDIO_VAE = "minimax_h3_audio_vae_fp32.safetensors"
 TURBO = "minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors"
+FAST_TURBO = "minimax_h3_fl2v_turbo_4step_v1.0_768p_comfyui_bf16.safetensors"
+FAST_OUT = os.path.join(os.path.dirname(OUT), "minimax_h3_fast_workflow.json")
 
 PROMPT = """integrated_multimodal_description: [Shot 1] Live-action, a presenter - the person in the reference pictures - speaks directly to the camera. The camera stays locked off on a tripod. The presenter (S1) talks in a clear, natural voice, lip movements matching the provided speech audio exactly, with subtle eyebrow and jaw movement, natural blinking and small head nods while talking. Toward the end of the shot the presenter settles into the pose, framing and expression of the last reference picture. Face, hair, clothing, lighting and background match the reference pictures exactly throughout.
 
@@ -196,7 +198,7 @@ def build():
            title="1. Split Audio Chunk (H3 frame grid)", cnr="comfyui-h3-longform")
     g.node(21, "H3LongformAudioName", (-500, 740), (400, 90),
            outputs=[("name", "STRING"), ("filename", "STRING")],
-           widgets=[".mp4", ""],
+           widgets=[".mp4", "", ""],
            title="Name run from audio filename (unlink to type your own)",
            cnr="comfyui-h3-longform")
 
@@ -376,10 +378,106 @@ def build():
     }
 
 
-if __name__ == "__main__":
+def build_fast():
+    """Fixed four-step FL2VA with the author's 768p LoRA settings.
+
+    Reuse the tested audio/carry/write graph; remove the optional base-model and
+    step switches. Advanced nodes are collapsed for a smaller working canvas.
+    Fewer visible nodes do not themselves speed up inference.
+    """
     wf = build()
-    with open(OUT, "w", encoding="utf-8", newline="\n") as f:
-        json.dump(wf, f, indent=1, ensure_ascii=False)
-        f.write("\n")
-    print(f"wrote {os.path.normpath(OUT)}: {len(wf['nodes'])} nodes, "
-          f"{len(wf['links'])} links")
+    old_nodes = {n["id"]: n for n in wf["nodes"]}
+    connections = [(src, slot, dst, old_nodes[dst]["inputs"][port]["name"])
+                   for _, src, slot, dst, port, _ in wf["links"]]
+    removed = {2, 3, 4, 5, 6, 45, 46, 47, 48, 49}
+    g = Graph()
+    g.nodes = [n for n in wf["nodes"] if n["id"] not in removed]
+    nodes = {n["id"]: n for n in g.nodes}
+    nodes[1]["title"] = "MiniMax H3 Fast - start here"
+    nodes[1]["widgets_values"] = ["""# MiniMax H3 Fast
+
+Dedicated **4-step 768p Turbo** LoRA. Same portrait + voiceover, automatic chunks,
+resume and final stitching as the standard workflow. No extra model selection.
+
+1. Upload **Portrait** and **Voiceover**. Leave chunk_index on **increment**.
+2. Test one chunk (batch count 1). Reset chunk_index to 0 to resume.
+3. Queue enough items: audio seconds / 12, plus a margin. The final chunk stitches
+   `output/<audio name>_fast.mp4` and clears the queue.
+
+Fast sessions have `_fast` in their names, so standard renders are kept separate.
+Use a new Name suffix if you change inputs or settings. Width/Height default to
+768 x 768; 1344 x 768 or 768 x 1344 use more memory and compute.
+
+Model and sampling nodes below are collapsed: double-click to inspect them.
+Four sampling steps instead of eight should reduce sampling time; total speed,
+lip sync and identity still need GPU testing. Quality can differ from 8 steps.
+Motion carry is optional on Split; leave off for the first test.
+
+Licence and full instructions: https://github.com/tenitsky/minimax-h3
+"""]
+    nodes[21]["widgets_values"] = [".mp4", "", "_fast"]
+    nodes[21]["title"] = "Output name (audio filename + name_suffix)"
+    nodes[41]["widgets_values"] = [FAST_TURBO, 1]
+    nodes[41]["properties"]["models"] = [
+        {"name": FAST_TURBO, "url": HF + "loras/" + FAST_TURBO, "directory": "loras"}]
+    nodes[41]["title"] = "Fast: 4-step 768p Turbo LoRA"
+    nodes[62]["widgets_values"] = ["euler"]
+    nodes[63]["widgets_values"] = ["simple", 4, 1]
+    # Steps are now an ordinary widget, not a socket driven by the old switch.
+    nodes[63]["inputs"] = [i for i in nodes[63]["inputs"] if i["name"] != "steps"]
+    nodes[70]["widgets_values"][3:5] = ["run1_fast", "h3_fast_final.mp4"]
+    g.node(75, "MiniMaxH3SigmaShift", (0, 0), (300, 110),
+           inputs=[("model", "MODEL", False, False)], outputs=[("MODEL", "MODEL")],
+           widgets=[6.0, 3.0], title="Fast sigma shift (video 6 / audio 3)")
+    nodes[75] = g.nodes[-1]
+
+    # Rebuild links from their named endpoints to avoid stale slot numbers after
+    # removing switch-driven inputs. Both scheduler and guider use shifted model.
+    for order, node in enumerate(g.nodes):
+        node["order"] = order
+        for inp in node["inputs"]:
+            inp["link"] = None
+        for out in node["outputs"]:
+            out["links"] = []
+    for src, slot, dst, name in connections:
+        if dst in removed or src in removed - {48}:
+            continue
+        g.link(75 if src == 48 else src, slot, dst, name)
+    g.link(41, 0, 75, "model")
+
+    # Daily controls across the top, compact advanced groups underneath.
+    layout = {
+        1: ((0, 0), (360, 610)), 10: ((400, 0), (330, 360)),
+        11: ((400, 390), (330, 140)), 12: ((400, 560), (330, 90)),
+        30: ((770, 0), (420, 330)), 20: ((770, 365), (420, 290)),
+        13: ((1230, 0), (190, 90)), 14: ((1440, 0), (190, 90)),
+        21: ((1230, 130), (400, 130)), 70: ((1230, 300), (400, 310)),
+    }
+    for nid, (pos, size) in layout.items():
+        nodes[nid]["pos"], nodes[nid]["size"] = list(pos), list(size)
+    groups = [
+        ("Models - loaded automatically", [40, 41, 75, 42, 43, 44], 0, "#355563"),
+        ("Portrait + voice guidance", [50, 53, 31, 51, 52], 560, "#4a5568"),
+        ("Four-step sampling + decode", [60, 61, 62, 63, 64, 65], 1120, "#4c566a"),
+    ]
+    wf["groups"] = []
+    for gid, (title, ids, x, color) in enumerate(groups, 1):
+        for index, nid in enumerate(ids):
+            nodes[nid]["pos"] = [x + 25, 790 + index * 55]
+            nodes[nid]["flags"] = {"collapsed": True}
+        wf["groups"].append({"id": gid, "title": title,
+                             "bounding": [x, 730, 530, 420],
+                             "color": color, "font_size": 22, "flags": {}})
+    wf.update(id="a4fb6153-c9bf-4ba8-9b8a-e495d1b00804", nodes=g.nodes, links=g.links,
+              last_node_id=75, last_link_id=g._link_id)
+    wf["extra"] = {"ds": {"scale": 0.7, "offset": [40, 50]}}
+    return wf
+
+
+if __name__ == "__main__":
+    for path, wf in ((OUT, build()), (FAST_OUT, build_fast())):
+        with open(path, "w", encoding="utf-8", newline="\n") as f:
+            json.dump(wf, f, indent=1, ensure_ascii=False)
+            f.write("\n")
+        print(f"wrote {os.path.normpath(path)}: {len(wf['nodes'])} nodes, "
+              f"{len(wf['links'])} links")

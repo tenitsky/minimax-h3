@@ -44,7 +44,8 @@ On first pod boot, `setup.sh`:
 4. Installs the bundled `comfyui-h3-longform` nodes (4 nodes, no dependencies besides
    ffmpeg)
 5. Downloads the H3 model files (skip-if-exists, resumable)
-6. Installs `minimax_h3_long_video_workflow` into ComfyUI's **Workflows** sidebar
+6. Installs `minimax_h3_long_video_workflow` and `minimax_h3_fast_workflow` into
+   ComfyUI's **Workflows** sidebar
 7. Hands over to `/start.sh` (ComfyUI on port **8188**, JupyterLab on **8888**)
 
 ## Models pulled
@@ -60,10 +61,11 @@ the automatic fallback.
 | `minimax_h3_video_vae_int8_convrot.safetensors` | 2.8 GB | `vae/` |
 | `minimax_h3_audio_vae_fp32.safetensors` | 0.6 GB | `vae/` |
 | `minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors` | 2.0 GB | `loras/` |
+| `minimax_h3_fl2v_turbo_4step_v1.0_768p_comfyui_bf16.safetensors` | 2.0 GB | `loras/` |
 | *optional* `minimax_h3_ref2va_pruned_int8_convrot.safetensors` + ref2v turbo LoRA | 23 GB | `diffusion_models/`, `loras/` |
 | *alternative* `qwen3vl_32b_minimax_h3_int8_convrot.safetensors` | 27.1 GB | `text_encoders/` |
 
-The default model set is about **42 GB**. Use **100 GB of Network Volume storage**
+The default model set is about **44 GB**. Use **100 GB of Network Volume storage**
 as a starting point for ComfyUI, its environment, models and renders. An existing
 80 GB volume can be used if it has sufficient free space. Long/high-resolution
 renders or optional model downloads may need more than 100 GB.
@@ -247,6 +249,42 @@ needs `DOWNLOAD_REF2VA=1`.
   follows MiniMax's FL2VA prompt format, and the per-chunk `alignment` line is added
   for you.
 
+### MiniMax H3 Fast
+
+Open **`minimax_h3_fast_workflow`** in the Workflows sidebar for the simpler,
+four-step version. Upload your portrait and voiceover, test one chunk, then queue
+the remaining chunks as above. It keeps the original audio, portrait anchors,
+optional motion carry, resume and automatic stitching.
+
+Fast uses the dedicated **FL2V Turbo 4-step 768p LoRA**, strength 1, Euler sampler,
+simple scheduler, denoise 1, and video/audio sigma shifts **6/3**, following the
+[LoRA authors' settings](https://github.com/ModelTC/Minimax-H3-Turbo).
+Setup automatically downloads this additional 2 GB file; it reuses the same
+diffusion model, text encoder and VAEs. It does not need the Ref2VA models.
+
+The graph has **27 nodes instead of 36**, with model and sampling nodes collapsed
+below the main controls. Double-click a collapsed node to inspect it. The speed
+change comes from four sampling steps instead of eight; fewer boxes on screen
+do not reduce model work. Model loading, Qwen text/image encoding, VAE work and
+stitching still take time. Total render speed has not been benchmarked against LTX.
+
+The default canvas stays **768 x 768** to match the standard avatar workflow's
+workload. The LoRA was trained at 1344 x 768; that landscape size is also available
+through Width/Height, with more pixels to render. Four-step lip sync, identity and
+motion continuity need GPU testing, and quality may differ from the standard
+eight-step workflow. Compare one chunk before a full render.
+
+Fast writes `output/<audio name>_fast.mp4` and stores chunks in
+`output/h3_longform/<audio name>_fast/`, so it cannot reuse standard-workflow chunks
+by accident. Change `name_suffix` on the output-name node to start a fresh session
+when changing inputs or settings (for example `_fast_take2`).
+
+**Existing pod:** restart it using the same start command. Setup updates the node
+pack, downloads the new LoRA if missing and installs the new Fast workflow without
+overwriting your saved standard workflow. Refresh ComfyUI after startup completes.
+For a manual update, install both the updated node pack and the Fast JSON, and
+download the LoRA; importing just the graph into an old installation is insufficient.
+
 ### Optional motion carry (experimental)
 
 On **Split Audio Chunk**, set `motion_carry` before starting:
@@ -322,14 +360,16 @@ anything by hand, use that interpreter:
 ├── custom_nodes/
 │   └── comfyui-h3-longform/               # Split / Carry / Write + Stitch / Name From Audio File
 ├── tools/
-│   ├── build_workflow.py                  # generates the workflow JSON; re-run after edits
+│   ├── build_workflow.py                  # generates both workflow JSONs; re-run after edits
+│   ├── test_fast_workflow.py              # Fast graph and automatic model download checks
 │   ├── test_longform.py                   # CPU + ffmpeg regression checks
 │   ├── test_storage.py                    # Network Volume mount and filesystem checks
 │   ├── test_boot.py                       # full setup with image/network fixtures
 │   ├── test_jupyter.py                    # auth patch and real Jupyter Server smoke test
 │   └── test_setup.py                      # Bash download checks using local fixtures
 └── workflows/
-    └── minimax_h3_long_video_workflow.json
+    ├── minimax_h3_long_video_workflow.json
+    └── minimax_h3_fast_workflow.json
 ```
 
 ## References

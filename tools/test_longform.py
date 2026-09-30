@@ -194,6 +194,46 @@ class LongformTests(unittest.TestCase):
     def test_resume_cache_is_invalidated(self):
         self.assertTrue(math.isnan(h3.H3LongformSplit.IS_CHANGED()))
 
+    def test_audio_name_suffix_keeps_existing_names_and_separates_fast_resume(self):
+        normal = self.prompt("off", ["12", 0])
+        normal["11"] = {"class_type": "LoadAudio", "inputs": {"audio": "uploads/my voice.wav"}}
+        # Existing workflows have no name_suffix field, and keep their old names.
+        normal["12"] = {"class_type": "H3LongformAudioName", "inputs": {"suffix": ".mp4", "source_title": ""}}
+        fast = json.loads(json.dumps(normal))
+        fast["12"]["inputs"]["name_suffix"] = "_fast"
+        namer = h3.H3LongformAudioName()
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(namer.derive(".mp4", "", normal), ("my voice", "my voice.mp4"))
+            self.assertEqual(namer.derive(".mp4", "", fast, name_suffix="_fast"),
+                             ("my voice_fast", "my voice_fast.mp4"))
+            self.assertEqual(h3._session_from_prompt(normal), "my voice")
+            self.assertEqual(h3._session_from_prompt(fast), "my voice_fast")
+            self.assertNotEqual(namer.IS_CHANGED(".mp4", prompt=normal),
+                                namer.IS_CHANGED(".mp4", prompt=fast, name_suffix="_fast"))
+            audio = {"waveform": torch.zeros((1, 1, 24000 * 15)), "sample_rate": 24000}
+            completed = Path(h3._session_dir("my voice")) / "chunk_0000.mp4"
+            completed.write_bytes(b"existing normal chunk")
+            split = h3.H3LongformSplit()
+            self.assertIsInstance(split.split(audio, 0, 5, 5, 5, prompt=normal)[0], ExecutionBlocker)
+            self.assertIsInstance(split.split(audio, 0, 5, 5, 5, prompt=fast)[0], dict)
+            fast_completed = Path(h3._session_dir("my voice_fast")) / "chunk_0000.mp4"
+            fast_completed.write_bytes(b"existing fast chunk")
+            self.assertIsInstance(split.split(audio, 0, 5, 5, 5, prompt=fast)[0], ExecutionBlocker)
+            self.assertEqual(completed.read_bytes(), b"existing normal chunk")
+
+    def test_audio_name_and_session_resolver_select_same_audio(self):
+        prompt = self.prompt("off", ["12", 0])
+        prompt["10"] = {"class_type": "LoadAudio", "inputs": {"audio": "wrong.wav"},
+                        "_meta": {"title": "Other audio"}}
+        prompt["11"] = {"class_type": "LoadAudio", "inputs": {"audio": "selected.wav"},
+                        "_meta": {"title": "Voiceover"}}
+        prompt["12"] = {"class_type": "H3LongformAudioName",
+                        "inputs": {"suffix": ".mp4", "source_title": "Voiceover", "name_suffix": "_fast"}}
+        with contextlib.redirect_stdout(io.StringIO()):
+            name, filename = h3.H3LongformAudioName().derive(".mp4", "Voiceover", prompt, name_suffix="_fast")
+        self.assertEqual((name, filename), ("selected_fast", "selected_fast.mp4"))
+        self.assertEqual(h3._session_from_prompt(prompt), name)
+
     @unittest.skipUnless(shutil.which("ffmpeg"), "ffmpeg required")
     def test_network_volume_render_and_new_process_resume(self):
         prompt = self.prompt("5 frames (~0.2s)")

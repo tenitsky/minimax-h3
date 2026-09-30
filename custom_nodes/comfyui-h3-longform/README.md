@@ -15,6 +15,11 @@ item to the next.
 | **H3 Longform: Write + Stitch** | Writes the chunk as an mp4. On the last chunk it concatenates them all and muxes in the original track |
 | **H3 Longform: Name From Audio File** | Names the session and output after the Load Audio file |
 
+The name node's optional `name_suffix` is appended to both names. The bundled
+`minimax_h3_fast_workflow` sets `_fast`, keeping its four-step renders separate
+from the standard workflow's chunks. Change it when starting a new take with
+different inputs or settings. Existing workflows default to an empty suffix.
+
 ## Wiring (already done in `minimax_h3_long_video_workflow`)
 
 - Split `audio_chunk` → Write `chunk_audio`

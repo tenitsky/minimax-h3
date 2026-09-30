@@ -34,4 +34,6 @@ jobs:
           python -B tools/test_jupyter.py
           python -B tools/test_boot.py
       - name: Workflow and real ffmpeg regression tests
-        run: python -B tools/test_longform.py
+        run: |
+          python -B tools/test_fast_workflow.py
+          python -B tools/test_longform.py

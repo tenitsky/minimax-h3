@@ -244,12 +244,12 @@ def _carry_setting(prompt):
     return 0
 
 
-def _audio_basename(prompt, namer_id=None, default="run1"):
+def _audio_basename(prompt, namer_id=None, default="run1", source_title=None):
     """The LoadAudio selection, without directory or extension."""
     if not isinstance(prompt, dict):
         return default
-    want = ""
-    if namer_id is not None:
+    want = source_title.strip() if isinstance(source_title, str) else ""
+    if source_title is None and namer_id is not None:
         n = prompt.get(str(namer_id)) or {}
         want = ((n.get("inputs") or {}).get("source_title") or "").strip()
     for node in _prompt_nodes(prompt, "LoadAudio"):
@@ -279,7 +279,8 @@ def _session_from_prompt(prompt, default="run1"):
         if isinstance(v, list) and len(v) == 2:
             src = prompt.get(str(v[0])) or {}
             if src.get("class_type") == "H3LongformAudioName":
-                return _audio_basename(prompt, v[0], default)
+                name_suffix = (src.get("inputs") or {}).get("name_suffix", "")
+                return _audio_basename(prompt, v[0], default) + name_suffix
     return default
 
 
@@ -704,13 +705,17 @@ class H3LongformAudioName:
             "required": {
                 "suffix": ("STRING", {"default": ".mp4",
                                       "tooltip": "Appended to the filename output "
-                                                 "only; the session name stays bare."}),
+                                                 "only, normally .mp4."}),
             },
             "optional": {
                 "source_title": ("STRING", {
                     "default": "",
                     "tooltip": "Title of the Load Audio node to read, if the graph "
                                "has more than one. Blank uses the first found."}),
+                "name_suffix": ("STRING", {
+                    "default": "",
+                    "tooltip": "Appended to both the session and output name. "
+                               "Use _fast to keep fast renders separate."}),
             },
             "hidden": {"prompt": "PROMPT"},
         }
@@ -721,13 +726,13 @@ class H3LongformAudioName:
     CATEGORY = "H3 Longform"
 
     @classmethod
-    def IS_CHANGED(cls, suffix, source_title="", prompt=None, **kw):
+    def IS_CHANGED(cls, suffix, source_title="", prompt=None, name_suffix="", **kw):
         # Swapping the audio file must invalidate the cache, or new chunks would
         # land in the previous run's folder.
-        return f"{_audio_basename(prompt)}:{suffix}:{source_title}"
+        return f"{_audio_basename(prompt, source_title=source_title)}:{suffix}:{source_title}:{name_suffix}"
 
-    def derive(self, suffix, source_title="", prompt=None):
-        name = _audio_basename(prompt)
+    def derive(self, suffix, source_title="", prompt=None, name_suffix=""):
+        name = _audio_basename(prompt, source_title=source_title) + name_suffix
         print(f"{LOG} run name from audio file: {name}")
         return (name, name + suffix)
 

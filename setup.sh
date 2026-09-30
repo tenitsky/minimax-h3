@@ -259,6 +259,10 @@ if [ "$DOWNLOAD_TURBO_LORA" = "1" ]; then
   download_h3 "loras/minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors" || FAILED=1
 fi
 
+# The separate Fast workflow uses the dedicated four-step 768p LoRA (~2GB).
+# Its graph also sets the required video/audio sigma shifts to 6/3.
+download_h3 "loras/minimax_h3_fl2v_turbo_4step_v1.0_768p_comfyui_bf16.safetensors" || FAILED=1
+
 # OPTIONAL: Ref2VA model (~21GB) for ComfyUI's own "Reference to Video" template.
 # Not used by the bundled workflow.
 if [ "$DOWNLOAD_REF2VA" = "1" ]; then
