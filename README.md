@@ -44,8 +44,8 @@ On first pod boot, `setup.sh`:
 4. Installs the bundled `comfyui-h3-longform` nodes (4 nodes, no dependencies besides
    ffmpeg)
 5. Downloads the H3 model files (skip-if-exists, resumable)
-6. Installs `minimax_h3_long_video_workflow` and `minimax_h3_fast_workflow` into
-   ComfyUI's **Workflows** sidebar
+6. Installs the standard, Fast and Fast Draft workflows into ComfyUI's
+   **Workflows** sidebar
 7. Hands over to `/start.sh` (ComfyUI on port **8188**, JupyterLab on **8888**)
 
 ## Models pulled
@@ -251,6 +251,32 @@ needs `DOWNLOAD_REF2VA=1`.
 
 ### MiniMax H3 Fast
 
+**For less GPU work, start with `minimax_h3_fast_draft_workflow`.** It uses
+**544 x 544, four steps** and the already installed non-768p FL2V Turbo v1.0 LoRA.
+The [LoRA authors](https://github.com/ModelTC/Minimax-H3-Turbo) recommend either
+eight or four inference steps for that model, with video/audio shifts **12/3**.
+The `8step` in its filename is expected even when running this four-step preset.
+
+| Workflow | Canvas | Sampling steps | Output suffix |
+|---|---|---|---|
+| `minimax_h3_fast_draft_workflow` | 544 x 544 | 4 | `_fast_draft` |
+| `minimax_h3_fast_workflow` | 768 x 768 | 4 | `_fast` |
+| `minimax_h3_long_video_workflow` | 768 x 768 | 8 with Turbo on | none |
+
+Draft renders about **half as many pixels per frame** as the other two. Its
+pixel-count times sampling-step count is about one quarter of the standard
+eight-step preset; that is a workload comparison, **not a measured 4x speedup**.
+The image has less detail and is not upscaled. Loading, text/image encoding and
+offloading can still dominate runtime. All presets keep 24 fps, the complete
+voiceover, portrait anchors, resume and stitching. Draft keeps the same chunk
+duration to avoid adding extra prompt encoding and boundary/padding work.
+
+Draft needs **no additional model downloads** on a default installation. Keep
+`DOWNLOAD_TURBO_LORA=1`. On an existing pod, restart with the same start command
+to install the new `minimax_h3_fast_draft_workflow` sidebar entry. Its chunks and
+final video use `_fast_draft`, so earlier renders stay separate. Test one chunk;
+draft speed, lip sync and identity have not been validated on a GPU.
+
 Open **`minimax_h3_fast_workflow`** in the Workflows sidebar for the simpler,
 four-step version. Upload your portrait and voiceover, test one chunk, then queue
 the remaining chunks as above. It keeps the original audio, portrait anchors,
@@ -336,7 +362,7 @@ file in the workflow's CLIPLoader.
 |---|---|---|
 | `HF_TOKEN` | *(empty)* | Not required (the repo is ungated). It raises Hugging Face rate limits |
 | `H3_TEXT_ENCODER` | `nvfp4` | `int8` downloads the 27 GB int8 Qwen3-VL encoder instead |
-| `DOWNLOAD_TURBO_LORA` | `1` | Leave this at `1`. The workflow's LoRA loader is validated even when Turbo is switched off, so without the file the workflow won't queue |
+| `DOWNLOAD_TURBO_LORA` | `1` | Leave this at `1`: downloads the LoRA used by standard and Fast Draft. The standard loader is validated even with Turbo off. The dedicated 768p Fast LoRA always downloads separately |
 | `DOWNLOAD_REF2VA` | `0` | `1` also pulls the Ref2VA model and LoRA for ComfyUI's R2V template |
 | `JUPYTER_NO_AUTH` | `1` | Disables Jupyter login (anyone with the URL gets a shell). Set `0` to keep the image's auth |
 | `JUPYTER_PASSWORD` | *(empty)* | Jupyter token, used when `JUPYTER_NO_AUTH=0` |
@@ -360,7 +386,7 @@ anything by hand, use that interpreter:
 ├── custom_nodes/
 │   └── comfyui-h3-longform/               # Split / Carry / Write + Stitch / Name From Audio File
 ├── tools/
-│   ├── build_workflow.py                  # generates both workflow JSONs; re-run after edits
+│   ├── build_workflow.py                  # generates all workflow JSONs; re-run after edits
 │   ├── test_fast_workflow.py              # Fast graph and automatic model download checks
 │   ├── test_longform.py                   # CPU + ffmpeg regression checks
 │   ├── test_storage.py                    # Network Volume mount and filesystem checks
@@ -369,7 +395,8 @@ anything by hand, use that interpreter:
 │   └── test_setup.py                      # Bash download checks using local fixtures
 └── workflows/
     ├── minimax_h3_long_video_workflow.json
-    └── minimax_h3_fast_workflow.json
+    ├── minimax_h3_fast_workflow.json
+    └── minimax_h3_fast_draft_workflow.json
 ```
 
 ## References

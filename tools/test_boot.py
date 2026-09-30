@@ -189,6 +189,9 @@ os.chmod = fixed_workspace_chmod
         installed_fast = self.comfy / "user/default/workflows/minimax_h3_fast_workflow.json"
         self.assertEqual(json.loads(installed_fast.read_text()),
                          json.loads((ROOT / "workflows/minimax_h3_fast_workflow.json").read_text()))
+        installed_draft = self.comfy / "user/default/workflows/minimax_h3_fast_draft_workflow.json"
+        self.assertEqual(json.loads(installed_draft.read_text()),
+                         json.loads((ROOT / "workflows/minimax_h3_fast_draft_workflow.json").read_text()))
 
         state = json.loads(self.handoff.read_text())
         self.assertEqual(state["COMFYUI_PATH"], str(self.comfy))
@@ -205,6 +208,8 @@ os.chmod = fixed_workspace_chmod
         installed_workflow.write_text(edited_workflow)
         edited_fast = '{"fast_edited_by_user": true}\n'
         installed_fast.write_text(edited_fast)
+        edited_draft = '{"draft_edited_by_user": true}\n'
+        installed_draft.write_text(edited_draft)
         notebook = self.workspace / "my-notebook.ipynb"
         notebook.write_text('{"cells": [], "metadata": {"keep": true}}\n')
         notebook_bytes = notebook.read_bytes()
@@ -219,6 +224,7 @@ os.chmod = fixed_workspace_chmod
         self.assertFalse(broken_log.exists(), "Model validation must use the working image interpreter")
         self.assertEqual(installed_workflow.read_text(), edited_workflow)
         self.assertEqual(installed_fast.read_text(), edited_fast)
+        self.assertEqual(installed_draft.read_text(), edited_draft)
         self.assertEqual(notebook.read_bytes(), notebook_bytes)
         self.assertEqual(list(self.workspace.glob(".h3-posix-*")), [])
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Generate the standard and Fast long-form workflow JSON files.
+Generate the standard, Fast and Fast Draft long-form workflow JSON files.
 
 The graph is written from code rather than exported from the UI so every link, slot
 and widget value is declared in one readable place and can be checked before a pod
@@ -26,6 +26,7 @@ AUDIO_VAE = "minimax_h3_audio_vae_fp32.safetensors"
 TURBO = "minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors"
 FAST_TURBO = "minimax_h3_fl2v_turbo_4step_v1.0_768p_comfyui_bf16.safetensors"
 FAST_OUT = os.path.join(os.path.dirname(OUT), "minimax_h3_fast_workflow.json")
+FAST_DRAFT_OUT = os.path.join(os.path.dirname(OUT), "minimax_h3_fast_draft_workflow.json")
 
 PROMPT = """integrated_multimodal_description: [Shot 1] Live-action, a presenter - the person in the reference pictures - speaks directly to the camera. The camera stays locked off on a tripod. The presenter (S1) talks in a clear, natural voice, lip movements matching the provided speech audio exactly, with subtle eyebrow and jaw movement, natural blinking and small head nods while talking. Toward the end of the shot the presenter settles into the pose, framing and expression of the last reference picture. Face, hair, clothing, lighting and background match the reference pictures exactly throughout.
 
@@ -474,8 +475,61 @@ Licence and full instructions: https://github.com/tenitsky/minimax-h3
     return wf
 
 
+def build_fast_draft():
+    """Reduce spatial work using the 544p LoRA's supported four-step mode.
+
+    The non-768p v1.0 LoRA supports both eight and four inference steps with
+    video/audio shifts 12/3. Keep the existing chunk duration: shorter chunks
+    would add more prompt encoding, boundary frames and padding per voiceover.
+    """
+    wf = build_fast()
+    nodes = {n["id"]: n for n in wf["nodes"]}
+    wf["id"] = "9b2f3be5-2a41-4416-bb4b-161d7cbef581"
+    nodes[1]["title"] = "MiniMax H3 Fast Draft - lower detail, less GPU work"
+    nodes[1]["widgets_values"] = ["""# MiniMax H3 Fast Draft
+
+**544 x 544, four steps.** About half the pixels per frame of Fast 768 x 768.
+Use this for speed-focused drafts; output has less detail and is not upscaled.
+
+1. Upload **Portrait** and **Voiceover**. Leave chunk_index on **increment**.
+2. Test one chunk (batch count 1). Reset chunk_index to 0 to resume.
+3. Queue enough items: audio seconds / 12, plus a margin. The final chunk stitches
+   `output/<audio name>_fast_draft.mp4` and clears the queue.
+
+Reuses the installed **FL2V Turbo 8-step v1.0** LoRA in its author-supported
+**four-step** mode: Euler, simple scheduler, video/audio shifts 12/3. The filename
+says 8step; four-step inference is intentional for this lower-resolution draft.
+
+Portrait anchors, the full voiceover, resume and stitching stay enabled. Motion
+carry defaults to off. Chunks still run up to 15s to avoid extra boundary overhead.
+
+Change `name_suffix` to start a new take when changing inputs or settings. Draft
+sessions end in `_fast_draft`, separate from Fast and standard renders.
+
+Less model work does not guarantee a particular speedup. Loading, encoding and
+CPU offloading can still dominate. Speed, lip sync and identity need GPU testing.
+Use the standard or 768p Fast workflow when you need more detail.
+
+Licence and full instructions: https://github.com/tenitsky/minimax-h3
+"""]
+    for nid in (13, 14):
+        nodes[nid]["widgets_values"] = [544, "fixed"]
+    nodes[50]["widgets_values"][1:3] = [544, 544]
+    nodes[51]["widgets_values"][1:3] = [544, 544]
+    nodes[41]["widgets_values"] = [TURBO, 1]
+    nodes[41]["properties"]["models"] = [
+        {"name": TURBO, "url": HF + "loras/" + TURBO, "directory": "loras"}]
+    nodes[41]["title"] = "544p Turbo v1.0 (four-step mode)"
+    nodes[75]["widgets_values"] = [12.0, 3.0]
+    nodes[75]["title"] = "Draft sigma shift (video 12 / audio 3)"
+    nodes[21]["widgets_values"] = [".mp4", "", "_fast_draft"]
+    nodes[70]["widgets_values"][3:5] = ["run1_fast_draft", "h3_fast_draft_final.mp4"]
+    return wf
+
+
 if __name__ == "__main__":
-    for path, wf in ((OUT, build()), (FAST_OUT, build_fast())):
+    for path, wf in ((OUT, build()), (FAST_OUT, build_fast()),
+                     (FAST_DRAFT_OUT, build_fast_draft())):
         with open(path, "w", encoding="utf-8", newline="\n") as f:
             json.dump(wf, f, indent=1, ensure_ascii=False)
             f.write("\n")

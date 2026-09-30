@@ -1,4 +1,4 @@
-"""CPU checks for the Fast workflow's graph, sampling contract, and model setup."""
+"""CPU checks for Fast and Fast Draft graphs, sampling settings, and model setup."""
 from collections import deque
 import importlib.util
 import json
@@ -18,8 +18,16 @@ FAST_LORA = "minimax_h3_fl2v_turbo_4step_v1.0_768p_comfyui_bf16.safetensors"
 
 
 class FastWorkflowTests(unittest.TestCase):
+    builder_function = "build_fast"
+    workflow_filename = "minimax_h3_fast_workflow.json"
+    lora_filename = FAST_LORA
+    video_shift = 6.0
+    canvas = 768
+    name_suffix = "_fast"
+    fallback_names = ["run1_fast", "h3_fast_final.mp4"]
+
     def setUp(self):
-        self.workflow = builder.build_fast()
+        self.workflow = getattr(builder, self.builder_function)()
         self.nodes = {node["id"]: node for node in self.workflow["nodes"]}
         self.links = {link[0]: link for link in self.workflow["links"]}
 
@@ -40,9 +48,11 @@ class FastWorkflowTests(unittest.TestCase):
         self.assertEqual((actual["id"], actual_output), (expected["id"], output))
 
     def test_shipped_workflow_matches_builder(self):
-        path = ROOT / "workflows/minimax_h3_fast_workflow.json"
+        path = ROOT / "workflows" / self.workflow_filename
         self.assertEqual(json.loads(path.read_text(encoding="utf-8")), self.workflow)
         self.assertNotEqual(self.workflow["id"], builder.build()["id"])
+        if self.builder_function != "build_fast":
+            self.assertNotEqual(self.workflow["id"], builder.build_fast()["id"])
 
     def test_all_links_are_live_reciprocal_typed_and_acyclic(self):
         self.assertEqual(len(self.nodes), len(self.workflow["nodes"]), "Duplicate node IDs")
@@ -106,8 +116,8 @@ class FastWorkflowTests(unittest.TestCase):
         scheduler = self.node("BasicScheduler")
         sampler = self.node("KSamplerSelect")
         sampling = self.node("SamplerCustomAdvanced")
-        self.assertEqual(lora["widgets_values"], [FAST_LORA, 1])
-        self.assertEqual(shift["widgets_values"], [6.0, 3.0])
+        self.assertEqual(lora["widgets_values"], [self.lora_filename, 1])
+        self.assertEqual(shift["widgets_values"], [self.video_shift, 3.0])
         self.assertEqual(sampler["widgets_values"], ["euler"])
         self.assertEqual(scheduler["widgets_values"], ["simple", 4, 1])
         self.assertFalse(any(inp["name"] == "steps" for inp in scheduler["inputs"]),
@@ -132,6 +142,15 @@ class FastWorkflowTests(unittest.TestCase):
         writer = self.node("H3LongformWrite")
         decode = self.node("VAEDecode")
         guider = self.node("BasicGuider")
+        sampling = self.node("SamplerCustomAdvanced")
+        video_vae, _ = self.source(image_to_video, "vae")
+        audio_vae, _ = self.source(guide, "audio_vae")
+        self.assertEqual(video_vae["widgets_values"], ["minimax_h3_video_vae_int8_convrot.safetensors"])
+        self.assertEqual(audio_vae["widgets_values"], ["minimax_h3_audio_vae_fp32.safetensors"])
+        self.assert_source(guide, "vae", video_vae, "VAE")
+        self.assert_source(decode, "vae", video_vae, "VAE")
+        self.assert_source(decode, "samples", sampling, "output")
+        self.assert_source(sampling, "latent_image", image_to_video, "LATENT")
         self.assert_source(crop, "image", portrait, "IMAGE")
         self.assert_source(carry, "portrait", crop, "IMAGE")
         self.assert_source(carry, "carry_frames", split, "carry_frames")
@@ -163,13 +182,14 @@ class FastWorkflowTests(unittest.TestCase):
         name = self.node("H3LongformAudioName")
         for dimension in ("width", "height"):
             control, output = self.source(image_to_video, dimension)
-            self.assertEqual(control["widgets_values"], [768, "fixed"])
+            self.assertEqual(control["widgets_values"], [self.canvas, "fixed"])
             self.assert_source(crop, dimension, control, output)
-        self.assertEqual(crop["widgets_values"], ["lanczos", 768, 768, "center"])
-        self.assertEqual(name["widgets_values"], [".mp4", "", "_fast"])
+        self.assertEqual(crop["widgets_values"], ["lanczos", self.canvas, self.canvas, "center"])
+        self.assertEqual(image_to_video["widgets_values"][1:3], [self.canvas, self.canvas])
+        self.assertEqual(name["widgets_values"], [".mp4", "", self.name_suffix])
         self.assert_source(writer, "session", name, "name")
         self.assert_source(writer, "filename", name, "filename")
-        self.assertEqual(writer["widgets_values"][3:5], ["run1_fast", "h3_fast_final.mp4"])
+        self.assertEqual(writer["widgets_values"][3:5], self.fallback_names)
 
     @unittest.skipUnless(BASH and Path(BASH).exists(), "Bash required for default download plan")
     def test_required_model_files_are_in_the_default_download_plan(self):
@@ -188,12 +208,22 @@ class FastWorkflowTests(unittest.TestCase):
         required = {item["directory"] + "/" + item["name"] for node in self.nodes.values()
                     for item in node["properties"].get("models", [])}
         self.assertEqual(len(required), 5)
-        self.assertIn("loras/" + FAST_LORA, required)
+        self.assertIn("loras/" + self.lora_filename, required)
         self.assertLessEqual(required, downloads)
         for node in self.nodes.values():
             for item in node["properties"].get("models", []):
                 self.assertEqual(node["widgets_values"][0], item["name"])
                 self.assertEqual(item["url"], builder.HF + item["directory"] + "/" + item["name"])
+
+
+class FastDraftWorkflowTests(FastWorkflowTests):
+    builder_function = "build_fast_draft"
+    workflow_filename = "minimax_h3_fast_draft_workflow.json"
+    lora_filename = "minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors"
+    video_shift = 12.0
+    canvas = 544
+    name_suffix = "_fast_draft"
+    fallback_names = ["run1_fast_draft", "h3_fast_draft_final.mp4"]
 
 
 if __name__ == "__main__":
