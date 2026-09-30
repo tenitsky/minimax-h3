@@ -25,7 +25,7 @@
    },
    "title": "MiniMax H3 Fast - start here",
    "widgets_values": [
-    "# MiniMax H3 Fast\n\nDedicated **4-step 768p Turbo** LoRA (video/audio shift 6/3), INT8 attention and Sol-Attn sparse attention. Same portrait + voiceover, automatic chunks, resume and stitching as the standard workflow.\n\n1. Upload **Portrait** and **Voiceover**.\n2. In **Talking-Head Prompt**, describe the `subject` and `background` you see in the portrait. This is what keeps the background from changing.\n3. Test one chunk (batch count 1). Then set chunk_index to **0** and queue audio seconds / 8, plus a margin. The final chunk stitches `output/<audio name>_fast.mp4`.\n\nChange `name_suffix` on the output-name node to start a fresh take when changing inputs or settings.\n\nModel and sampling nodes below are collapsed: double-click to inspect them. To compare quality, bypass **Model Sparse Attention** (Ctrl+B) or set the attention backend to `pytorch attention`.\n\nLicence and full instructions: https://github.com/tenitsky/minimax-h3\n"
+    "# MiniMax H3 Fast\n\nDedicated **4-step 768p Turbo** LoRA (video/audio shift 6/3), INT8 attention and Sol-Attn sparse attention. Same portrait + voiceover, automatic chunks, resume and stitching as the standard workflow.\n\n1. Upload **Portrait** and **Voiceover**.\n2. In **Talking-Head Prompt**, describe the `subject` and `background` you see in the portrait. This is what keeps the background from changing. The fields come filled in for an example portrait; rewrite them for yours and keep the leading `subject:` / `background:` tags (optional, stripped).\n3. Test one chunk (batch count 1). Then set chunk_index to **0** and queue audio seconds / 8, plus a margin. The final chunk stitches `output/<audio name>_fast.mp4`.\n\nChange `name_suffix` on the output-name node to start a fresh take when changing inputs or settings.\n\nModel and sampling nodes below are collapsed: double-click to inspect them. To compare quality, bypass **Model Sparse Attention** (Ctrl+B) or set the attention backend to `pytorch attention`.\n\nLicence and full instructions: https://github.com/tenitsky/minimax-h3\n"
    ],
    "color": "#222",
    "bgcolor": "#000"
@@ -456,10 +456,10 @@
    "widgets_values": [
     124,
     0,
-    "",
-    "",
-    "a clear, calm, natural voice",
-    ""
+    "subject: a woman with long, dark brown wavy hair falling past her shoulders, wearing a dark navy V-neck blouse with a soft satin sheen, framed from the chest up and facing the camera",
+    "background: a plain, seamless light-grey studio backdrop with soft, even studio lighting and a gentle shadow-free falloff, with nothing else in the frame",
+    "delivery: a warm, friendly, confident voice at a relaxed pace",
+    "extra: She keeps a gentle, natural smile between sentences, and her hair and blouse stay neatly in place."
    ],
    "color": "#322",
    "bgcolor": "#533"

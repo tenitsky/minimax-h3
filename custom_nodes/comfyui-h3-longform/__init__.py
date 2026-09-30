@@ -241,6 +241,18 @@ DEFAULT_BACKGROUND = "the background shown in the reference picture"
 DEFAULT_DELIVERY = "a clear, calm, natural voice"
 
 
+def _field(text, name):
+    """A description with whitespace collapsed and an optional 'name:' tag removed.
+
+    Multiline widgets hide their label once they hold text, so the bundled
+    workflows start each value with its field name ("subject: a woman ...").
+    """
+    text = " ".join((text or "").split())
+    if text.lower().startswith(name + ":"):
+        text = text[len(name) + 1:].strip()
+    return text
+
+
 def talking_head_prompt(length, carry, subject="", background="", delivery="", extra=""):
     """A complete single-shot H3 prompt for a locked-off talking head.
 
@@ -248,9 +260,9 @@ def talking_head_prompt(length, carry, subject="", background="", delivery="", e
     body names what stays fixed in concrete terms - the model drifts toward whatever
     the text leaves open, and a bare "presenter" pulls in broadcast graphics.
     """
-    subject = " ".join((subject or "").split()) or DEFAULT_SUBJECT
-    background = " ".join((background or "").split()) or DEFAULT_BACKGROUND
-    delivery = " ".join((delivery or "").split()) or DEFAULT_DELIVERY
+    subject = _field(subject, "subject") or DEFAULT_SUBJECT
+    background = _field(background, "background") or DEFAULT_BACKGROUND
+    delivery = _field(delivery, "delivery") or DEFAULT_DELIVERY
     if carry:
         start = (f"[Shot 1] Live-action, a static shot continuing seamlessly from the provided "
                  f"opening frames: {subject} is already mid-sentence, with the same framing, "
@@ -275,7 +287,7 @@ def talking_head_prompt(length, carry, subject="", background="", delivery="", e
         "frame to the last; no other person, object, text, caption, logo, watermark or "
         "on-screen graphic appears at any point.",
     ]
-    extra = " ".join((extra or "").split())
+    extra = _field(extra, "extra")
     if extra:
         body.append(extra)
     body.append(end)

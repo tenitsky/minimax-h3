@@ -31,7 +31,19 @@ TURBO_544 = "minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors"
 TURBO_768_8 = "minimax_h3_fl2v_turbo_8step_v1.0_768p_comfyui_bf16.safetensors"
 TURBO_768_4 = "minimax_h3_fl2v_turbo_4step_v1.0_768p_comfyui_bf16.safetensors"
 
-DELIVERY = "a clear, calm, natural voice"
+# Talking-Head Prompt defaults, written for the example portrait. Each starts with
+# its field name because a multiline widget hides its label once it holds text;
+# the node strips the tag before building the prompt.
+PROMPT_FIELDS = [
+    "subject: a woman with long, dark brown wavy hair falling past her shoulders, "
+    "wearing a dark navy V-neck blouse with a soft satin sheen, framed from the chest "
+    "up and facing the camera",
+    "background: a plain, seamless light-grey studio backdrop with soft, even studio "
+    "lighting and a gentle shadow-free falloff, with nothing else in the frame",
+    "delivery: a warm, friendly, confident voice at a relaxed pace",
+    "extra: She keeps a gentle, natural smile between sentences, and her hair and "
+    "blouse stay neatly in place.",
+]
 # Split: chunk_index, target_seconds, min_seconds, max_seconds, cut_mode,
 # skip_existing, motion_carry. Every frame between a chunk's two pinned portraits is
 # invented, so drift grows with chunk length: 10s rather than H3's 15s ceiling.
@@ -117,7 +129,7 @@ NOTE_INPUTS = """## Inputs
 
 - **Load Portrait** - one person facing the camera, face clearly visible, in front of the background you want to keep. It is pinned as the first and last frame of every chunk.
 - **Load Voiceover** - your speech track, any length. Mono is fine.
-- **Talking-Head Prompt** - describe the `subject` and the `background` you can see in the portrait, in a few concrete words. The node writes the full MiniMax-format prompt for every chunk.
+- **Talking-Head Prompt** - describe the `subject` and the `background` you can see in the portrait, in a few concrete words. The node writes the full MiniMax-format prompt for every chunk. The fields come filled in for an example portrait; rewrite them for yours and keep the leading `subject:` / `background:` tags (optional, stripped).
 
 Drop files in `ComfyUI/input/`, or upload them through the nodes.
 
@@ -134,7 +146,7 @@ NOTE_FAST = """# MiniMax H3 Fast
 Dedicated **4-step 768p Turbo** LoRA (video/audio shift 6/3), INT8 attention and Sol-Attn sparse attention. Same portrait + voiceover, automatic chunks, resume and stitching as the standard workflow.
 
 1. Upload **Portrait** and **Voiceover**.
-2. In **Talking-Head Prompt**, describe the `subject` and `background` you see in the portrait. This is what keeps the background from changing.
+2. In **Talking-Head Prompt**, describe the `subject` and `background` you see in the portrait. This is what keeps the background from changing. The fields come filled in for an example portrait; rewrite them for yours and keep the leading `subject:` / `background:` tags (optional, stripped).
 3. Test one chunk (batch count 1). Then set chunk_index to **0** and queue audio seconds / 8, plus a margin. The final chunk stitches `output/<audio name>_fast.mp4`.
 
 Change `name_suffix` on the output-name node to start a fresh take when changing inputs or settings.
@@ -149,7 +161,7 @@ NOTE_DRAFT = """# MiniMax H3 Fast Draft
 **544 x 544, four steps** - the 544p-trained Turbo LoRA in its supported four-step mode (video/audio shift 12/3), INT8 attention and Sol-Attn sparse attention. About half the pixels per frame of the 768 workflows: use it to check timing and framing, then render the final with Fast or the standard workflow.
 
 1. Upload **Portrait** and **Voiceover**.
-2. In **Talking-Head Prompt**, describe the `subject` and `background` you see in the portrait.
+2. In **Talking-Head Prompt**, describe the `subject` and `background` you see in the portrait. The fields come filled in for an example portrait; rewrite them for yours and keep the leading `subject:` / `background:` tags (optional, stripped).
 3. Test one chunk (batch count 1). Then set chunk_index to **0** and queue audio seconds / 8, plus a margin. The final chunk stitches `output/<audio name>_draft.mp4`.
 
 The LoRA filename says 8step; four-step inference is intentional and supported by its authors.
@@ -294,7 +306,7 @@ def build(variant="standard"):
     g.node(30, "H3LongformPrompt", (-500, -40), (520, 500),
            inputs=[("length", "INT", W, False), ("carry_frames", "INT", W, False)],
            outputs=[("prompt", "STRING")],
-           widgets=[124, 0, "", "", DELIVERY, ""],
+           widgets=[124, 0] + PROMPT_FIELDS,
            title="Talking-Head Prompt (describe subject + background)", color=INPUT,
            cnr="comfyui-h3-longform")
 

@@ -113,6 +113,20 @@ class LongformTests(unittest.TestCase):
                 else:
                     self.assertIn("Picture 1 (from Shot 1) aligns with the 0.00-second", parts[0])
                     self.assertIn("established by Picture 2.", text)
+        # Workflow defaults carry "subject:" style tags; none may reach the model.
+        for name, variant in builder.VARIANTS.items():
+            node = next(n for n in builder.build(name)["nodes"] if n["type"] == "H3LongformPrompt")
+            fields = node["widgets_values"][2:]
+            self.assertEqual([f.split(":")[0] for f in fields],
+                             ["subject", "background", "delivery", "extra"])
+            text = h3.H3LongformPrompt().build(226, 0, *fields)[0]
+            for tag in ("subject:", "background:", "delivery:", "extra:"):
+                self.assertNotIn(tag, text.lower())
+            self.assertIn("a plain, seamless light-grey studio backdrop", text)
+            self.assertIn("in a warm, friendly, confident voice", text)
+            self.assertIn("She keeps a gentle, natural smile", text)
+        self.assertEqual(h3._field("  Subject:   a man  ", "subject"), "a man")
+        self.assertEqual(h3._field("a man: smiling", "subject"), "a man: smiling")
         blank = h3.H3LongformPrompt().build(124, 0, "  ", "", "")[0]
         self.assertIn(h3.DEFAULT_SUBJECT, blank)
         self.assertIn(h3.DEFAULT_BACKGROUND, blank)
