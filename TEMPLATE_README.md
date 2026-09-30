@@ -1,41 +1,41 @@
-# MiniMax H3 - ComfyUI + JupyterLab
+# MiniMax H3 - Long Talking Avatars
 
-Generate long talking-avatar videos from one portrait and a voiceover, with optional
-motion carry between chunks.
+Turn one portrait and a voiceover into a talking-avatar video in ComfyUI. Audio is rendered in chunks, then stitched with your original audio.
 
 ## Storage
 
-Attach **one Network Volume at `/workspace`**. Start with **100 GB**; large renders
-and optional models may need more. Keep the container disk at **5 GB**.
-The public template's 0 GB Volume disk default expects you to attach your own
-Network Volume when deploying; it does not provide storage by itself.
+Attach your own **Network Volume at /workspace** when deploying. **100 GB recommended**; large renders need more space.
 
-ComfyUI, its Python environment, models, inputs, workflows, Jupyter files, and render
-progress stay on the Network Volume. Save notebooks under `/workspace`.
-No Global Volume or storage environment variables are needed.
+The public template has a **5 GB container disk** and **0 GB Volume disk**. You must attach a Network Volume before deployment. No Global Storage is needed.
 
-For a replacement pod, reattach the same Network Volume in its datacenter.
-Set the workflow's chunk index to 0 to resume with the same render settings.
+ComfyUI, its Python environment, models, uploads, workflows and render progress stay on the Network Volume. Save Jupyter notebooks under /workspace. Reattach the same volume in its datacenter when replacing a pod.
 
 ## Connect
 
-- **8188:** ComfyUI
-- **8888:** JupyterLab
+- **Port 8188:** ComfyUI
+- **Port 8888:** JupyterLab
 
-First startup downloads about 42 GB of model weights. Wait for setup to finish.
-Jupyter has no login by default; anyone with its accessible URL can run commands.
+First boot downloads **42 GB** of weights. Wait for "Setup complete!" in logs. Complete models are reused on later boots.
 
-In ComfyUI, open the Workflows sidebar and select
-`minimax_h3_long_video_workflow`. Load your portrait and voiceover, test one chunk,
-then queue enough items to render the whole track.
+Jupyter has no login by default. Anyone with its accessible URL can run commands. For login protection, set JUPYTER_NO_AUTH=0 and set JUPYTER_PASSWORD when deploying.
 
-GPU usage and visual quality have not yet been validated on a live H3 pod.
-Start initial testing with 80 GB or more VRAM.
+## Generate a video
 
-## Model licence
+1. Open ComfyUI's Workflows sidebar.
+2. Select **minimax_h3_long_video_workflow**.
+3. Load your portrait and voiceover.
+4. Test one chunk with batch count 1.
+5. Reset chunk_index to 0, then queue enough items for the audio: roughly audio seconds divided by 12, plus a margin.
 
-The MiniMax H3 licence excludes use in the US, EU, UK, and South Korea unless
-separately licensed. Check the licence and choose an eligible datacenter before use.
+The last chunk stitches the final video into ComfyUI/output. To resume, keep the same settings, reset chunk_index to 0 and queue again.
+
+Optional motion carry uses the previous chunk's last **5 or 22 frames** to guide the next chunk. Default: off. Use a fresh session when changing inputs or settings.
+
+## Hardware and licence
+
+Start testing with **80 GB or more VRAM**. GPU memory use and quality have not been validated on a live H3 pod.
+
+The H3 licence excludes the **US, EU, UK and South Korea** unless separately licensed. Check the licence and choose an eligible datacenter.
 
 Full instructions and licence links:
 https://github.com/tenitsky/minimax-h3
