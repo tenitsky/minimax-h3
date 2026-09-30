@@ -229,7 +229,15 @@ class LongformTests(unittest.TestCase):
                         opening.pick(portrait, 1, carry, prompt)
 
     def test_resume_cache_is_invalidated(self):
-        self.assertTrue(math.isnan(h3.H3LongformSplit.IS_CHANGED()))
+        # ComfyUI evaluates IS_CHANGED with the hidden prompt set to {} and linked
+        # inputs omitted (execution.py IsChangedCache), so none of these nodes can
+        # see the audio filename or session there. Each must always re-run.
+        for cls, widgets in ((h3.H3LongformSplit, {}),
+                             (h3.H3LongformCarry, {}),
+                             (h3.H3LongformAudioName, {"suffix": ".mp4", "source_title": "",
+                                                       "name_suffix": ""})):
+            with self.subTest(node=cls.__name__):
+                self.assertTrue(math.isnan(cls.IS_CHANGED(prompt={}, **widgets)))
 
     def test_audio_name_suffix_keeps_existing_names_and_separates_fast_resume(self):
         normal = self.prompt("off", ["12", 0])
@@ -245,8 +253,6 @@ class LongformTests(unittest.TestCase):
                              ("my voice_fast", "my voice_fast.mp4"))
             self.assertEqual(h3._session_from_prompt(normal), "my voice")
             self.assertEqual(h3._session_from_prompt(fast), "my voice_fast")
-            self.assertNotEqual(namer.IS_CHANGED(".mp4", prompt=normal),
-                                namer.IS_CHANGED(".mp4", prompt=fast, name_suffix="_fast"))
             audio = {"waveform": torch.zeros((1, 1, 24000 * 15)), "sample_rate": 24000}
             completed = Path(h3._session_dir("my voice")) / "chunk_0000.mp4"
             completed.write_bytes(b"existing normal chunk")

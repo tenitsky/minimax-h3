@@ -555,15 +555,12 @@ class H3LongformCarry:
     CATEGORY = "H3 Longform"
 
     @classmethod
-    def IS_CHANGED(cls, chunk_index=0, carry_frames=0, prompt=None, **kw):
-        # The tail file changes between queue items while the widgets may not, so
-        # its mtime is part of the cache key.
-        try:
-            p = _tail_path(_session_from_prompt(prompt), int(chunk_index) - 1)
-            m = os.path.getmtime(p) if os.path.exists(p) else 0
-        except (TypeError, ValueError):
-            m = 0
-        return f"{chunk_index}:{carry_frames}:{m}"
+    def IS_CHANGED(cls, **kwargs):
+        # The tail file depends on the session and on files written by earlier queue
+        # items. ComfyUI calls IS_CHANGED with an empty hidden prompt and without
+        # linked values, so neither can be read here: always run. Loading a few
+        # frames is cheap, and a cached clip from another render would be wrong.
+        return float("nan")
 
     def pick(self, portrait, chunk_index, carry_frames, prompt=None):
         if not carry_frames:
@@ -831,10 +828,13 @@ class H3LongformAudioName:
     CATEGORY = "H3 Longform"
 
     @classmethod
-    def IS_CHANGED(cls, suffix, source_title="", prompt=None, name_suffix="", **kw):
-        # Swapping the audio file must invalidate the cache, or new chunks would
-        # land in the previous run's folder.
-        return f"{_audio_basename(prompt, source_title=source_title)}:{suffix}:{source_title}:{name_suffix}"
+    def IS_CHANGED(cls, **kwargs):
+        # The name comes from the Load Audio node, which is not an input of this
+        # one. ComfyUI calls IS_CHANGED with an empty hidden prompt, so the audio
+        # filename cannot be read here: a key built from it never changed, the
+        # cached name outlived the audio swap, and a new voiceover's chunks were
+        # written into the previous render's folder. Always run; it is a string.
+        return float("nan")
 
     def derive(self, suffix, source_title="", prompt=None, name_suffix=""):
         name = _audio_basename(prompt, source_title=source_title) + name_suffix
