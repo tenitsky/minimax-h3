@@ -409,7 +409,7 @@
    },
    "title": "Prompt",
    "widgets_values": [
-    "integrated_multimodal_description: [Shot 1] Live-action, a presenter - the person in the reference pictures - speaks directly to the camera. The camera stays locked off on a tripod. The presenter (S1) talks in a clear, natural voice, lip movements matching the provided speech audio exactly, with subtle eyebrow and jaw movement, natural blinking and small head nods while talking. Toward the end of the shot the presenter settles into the pose, framing and expression of the last reference picture. Face, hair, clothing, lighting and background match the reference pictures exactly throughout.\n\noverall_soundscape: Quiet indoor room tone under the voice. No music, no sound effects."
+    "integrated_multimodal_description: [Shot 1] Live-action, a presenter - the person in the reference pictures - speaks directly to the camera. The camera remains stationary on a tripod with a fixed focal length throughout the entire shot. Framing, subject size and camera distance remain identical to the reference pictures in every frame. No zoom, dolly, pan, tilt, reframing or cuts. The presenter (S1) talks in a clear, natural voice, lip movements matching the provided speech audio exactly, with subtle eyebrow and jaw movement, natural blinking and small head nods while talking. Face, hair, clothing, lighting and background match the reference pictures exactly throughout.\n\noverall_soundscape: Quiet indoor room tone under the voice. No music, no sound effects."
    ],
    "color": "#322",
    "bgcolor": "#533"
