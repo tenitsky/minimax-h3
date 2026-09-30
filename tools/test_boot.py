@@ -75,11 +75,13 @@ class BootTests(unittest.TestCase):
         header += b" " * (-len(header) % 8)
         self.fixture.write_bytes(struct.pack("<Q", len(header)) + header + b"\0" * 1000000)
 
-        self.make_executable(self.bin / "python3", """#!/bin/bash
+        python = """#!/bin/bash
 if [ "${1-}" = -m ] && [ "${2-}" = venv ]; then
   exit 1  # Exercise the supported optional-downloader fallback, never pip/network.
 fi
-exec """ + shlex.quote(sys.executable) + ' "$@"\n')
+exec """ + shlex.quote(sys.executable) + ' "$@"\n'
+        self.make_executable(self.bin / "python3", python)
+        self.make_executable(self.bin / "python3.12", python)
         self.make_executable(self.bin / "apt-get", """#!/bin/bash
 printf '%s\\n' "$*" >> "$BOOT_APT_LOG"
 exit 0
@@ -143,6 +145,16 @@ def fixed_workspace_chmod(path, mode, *args, **kwargs):
 Path.read_text = fixture_read_text
 os.chmod = fixed_workspace_chmod
 """, encoding="utf-8", newline="\n")
+        # The image's PyTorch, as setup's CUDA 13 check sees it.
+        (self.site / "torch").mkdir()
+        (self.site / "torch/__init__.py").write_text("""import os
+from types import SimpleNamespace
+
+__version__ = "2.10.0+fixture"
+version = SimpleNamespace(cuda=os.environ.get("BOOT_TORCH_CUDA", "13.0") or None)
+cuda = SimpleNamespace(is_available=lambda: os.environ.get("BOOT_GPU", "1") == "1",
+                       get_device_name=lambda index: "Fixture GPU")
+""", encoding="utf-8", newline="\n")
 
         self.env = dict(os.environ)
         for key in ("COMFYUI_PATH", "HF_HOME", "HF_TOKEN", "H3_TEXT_ENCODER",
@@ -181,6 +193,8 @@ os.chmod = fixed_workspace_chmod
         first = self.boot()
         self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
         self.assertTrue(self.handoff.exists(), first.stdout + first.stderr)
+        self.assertIn("PyTorch 2.10.0+fixture, CUDA build 13.0", first.stdout)
+        self.assertIn("GPU: Fixture GPU", first.stdout)
         self.assertEqual(len(self.downloads()), 7)
         self.assertEqual({p.name for p in (self.comfy / "models").rglob("*.safetensors")}, MODEL_NAMES)
         self.assertTrue((self.comfy / "custom_nodes/comfyui-h3-longform/__init__.py").is_file())
@@ -237,6 +251,20 @@ os.chmod = fixed_workspace_chmod
         self.assertFalse(self.handoff.exists())
         self.assertEqual(self.downloads(), [])
         self.assertFalse(self.apt_log.exists())
+
+    def test_cuda_12_image_stops_before_downloads(self):
+        result = self.boot(BOOT_TORCH_CUDA="12.8")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("needs the CUDA 13 image", result.stderr)
+        self.assertEqual(self.downloads(), [])
+        self.assertFalse(self.handoff.exists())
+
+    def test_old_driver_host_stops_before_downloads(self):
+        result = self.boot(BOOT_GPU="0")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("host driver is older than r580", result.stderr)
+        self.assertEqual(self.downloads(), [])
+        self.assertFalse(self.handoff.exists())
 
     def test_failed_model_transfer_never_hands_off_to_services(self):
         failed_model = "minimax_h3_video_vae_int8_convrot.safetensors"

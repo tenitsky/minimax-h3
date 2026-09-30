@@ -42,7 +42,8 @@ On first pod boot, `setup.sh`:
    Global Volume working storage
 2. Copies the baked ComfyUI from `/opt/comfyui-baked` to `/workspace/runpod-slim/ComfyUI`
    (self-healing, skip-if-present)
-3. Checks that the image's ComfyUI has `MiniMaxH3AddGuide`, and stops if not
+3. Checks that the image's ComfyUI has `MiniMaxH3AddGuide`, that its PyTorch is a
+   CUDA 13 build, and that it can use the GPU; stops if not
 4. Installs the bundled `comfyui-h3-longform` nodes (5 nodes, no dependencies besides
    ffmpeg)
 5. Downloads the H3 model files (skip-if-exists, resumable)
@@ -136,7 +137,7 @@ restarting. Fresh installations have no migration step.
 | Template name | `MiniMax H3 - ComfyUI + JupyterLab` |
 | Compute type | **NVIDIA / GPU** |
 | Public template | **On** |
-| Base image | `runpod/comfyui:1.4.0-rc.164-comfyuiv0.35.0-cuda12.8` |
+| Base image | **`runpod/comfyui:1.4.0-comfyuiv0.35.0-cuda13.0`** |
 | Registry authentication | None; image is public |
 | Container disk | **5 GB** |
 | Persistent storage in the public template editor | **Volume disk**, **0 GB**; no publisher-owned volume selected |
@@ -161,6 +162,23 @@ See [attaching a Network Volume](https://docs.runpod.io/storage/network-volumes)
 For GPU Compatibility, start with 80 GB or more VRAM for initial testing. Actual
 H3 GPU memory usage has not been benchmarked for this workflow.
 
+**CUDA 13 is required.** The template runs on the CUDA 13.0 image so comfy-kitchen's
+prebuilt kernels serve the `int8_convrot` weights and INT8 attention; on CUDA 12.8
+they fall back to slower Triton/PyTorch paths. Those kernels need driver **r580+**.
+When deploying, open **Additional filters → CUDA Versions** and select **13.0** (and
+newer). The image itself starts on older-driver hosts, where CUDA 13 PyTorch can't
+use the GPU, so `setup.sh` checks the PyTorch build and GPU access before any
+download and stops with a redeploy message if either is wrong.
+
+**Moving an existing Network Volume from the CUDA 12.8 template:** change the
+container image and redeploy with the same volume. No reinstall or re-download is
+needed: PyTorch and comfy-kitchen come from the image, and the volume's
+`.venv-cu128` (the same name on the 13.0 image) is created with
+`--system-site-packages` and only adds custom-node packages. The image's `/start.sh`
+logs `CUDA / venv status: OK` when the stacks match. If it warns that PyTorch is
+installed inside the persistent venv, a custom node installed its own copy:
+uninstall it from that venv.
+
 `JUPYTER_NO_AUTH=1` retains the existing no-login Jupyter behavior. For authenticated
 Jupyter, use `JUPYTER_NO_AUTH=0` and set `JUPYTER_PASSWORD` at deployment.
 JupyterLab opens at `/workspace`; save notebooks there for persistence.
@@ -169,9 +187,9 @@ under `/tmp`, because Jupyter requires private permissions on those files.
 Setup checks this before model downloads; notebooks and settings remain on the volume.
 Do not override `COMFYUI_PATH`: the image starts ComfyUI at its fixed path.
 
-> **The image needs ComfyUI ≥ 0.35.0.** `MiniMaxH3AddGuide`, the node that pins your
-> voiceover, doesn't exist before 0.34.0, and tags like `runpod/comfyui:cuda12.8` or
-> `…-comfyuiv0.30.0-…` ship older builds. `setup.sh` stops at boot if the node is
+> **The image needs ComfyUI ≥ 0.35.0 on CUDA 13.0.** `MiniMaxH3AddGuide`, the node that
+> pins your voiceover, doesn't exist before 0.34.0, and tags like `runpod/comfyui:cuda13.0`
+> or `…-comfyuiv0.30.0-…` ship older builds. `setup.sh` stops at boot if the node is
 > missing. It deliberately doesn't update ComfyUI core, because on these images that
 > can reinstall torch and break the CUDA build.
 
@@ -339,15 +357,10 @@ Speed-ups have **not been measured on a pod**; compare one chunk with and withou
 - **3-step LoRA**: none has been published for FL2VA.
 - **torch.compile**: each chunk length is a new shape, so compile time would recur.
 
-**CUDA 13 image (optional, not yet tested here).** Comfy-Org recommends the
-`int8_convrot` weights with PyTorch cu130. comfy-kitchen's prebuilt CUDA kernels need
-CUDA runtime ≥ 13.0 and driver r580+; on the cu128 image they fall back to Triton or
-PyTorch, which is slower. `runpod/comfyui:1.4.0-comfyuiv0.35.0-cuda13.0` is the same
-ComfyUI build on CUDA 13.0, and its CUDA runtime needs driver r580+ on the host. Setup
-copies ComfyUI and its virtualenv onto the volume only once, so switching images
-only takes effect with a **fresh volume**. Otherwise rename
-`/workspace/runpod-slim/ComfyUI` first; models can then be moved back. Test one
-chunk on the new image before switching a production template.
+**CUDA 13.** The template uses the CUDA 13.0 image, as Comfy-Org recommends for the
+`int8_convrot` weights: comfy-kitchen's prebuilt CUDA kernels need CUDA ≥ 13.0 and
+driver r580+, and fall back to slower Triton/PyTorch paths on CUDA 12.8. See the
+template settings above for the deployment filter and moving an existing volume.
 
 ### Optional motion carry (experimental)
 
@@ -405,8 +418,9 @@ file in the workflow's CLIPLoader.
 | `COMFYUI_PATH` | `/workspace/runpod-slim/ComfyUI` | Leave unset; must match the base image's fixed startup path |
 | `HF_HOME` | `/workspace/.cache/huggingface` | Keeps the HF cache on the volume, not the 5 GB container disk |
 
-ComfyUI runs from its own virtualenv (`$COMFYUI_PATH/.venv-cu128` on the cu128
-image). If you install anything by hand, use that interpreter:
+ComfyUI runs from its own virtualenv (`$COMFYUI_PATH/.venv-cu128`; the CUDA 13.0
+image keeps that name). If you install anything by hand, use that interpreter, and
+never install `torch` into it: PyTorch comes from the image.
 
 ```bash
 /workspace/runpod-slim/ComfyUI/.venv-cu128/bin/python -m pip install <package>

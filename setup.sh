@@ -74,7 +74,7 @@ PY
 # voiceover) first appeared in 0.34.0, and 0.35.0 is the first runpod/comfyui build
 # after it. This script deliberately does NOT update ComfyUI core - on these images
 # `pip install -r requirements.txt` can reinstall torch and break the baked CUDA build.
-#   Recommended image: runpod/comfyui:1.4.0-rc.164-comfyuiv0.35.0-cuda12.8
+#   Required image: runpod/comfyui:1.4.0-comfyuiv0.35.0-cuda13.0
 
 # Comfy-Org/MiniMax-H3 is ungated, so no token is needed. Set HF_TOKEN anyway if you
 # have one: anonymous requests are rate-limited (~120/h vs ~1000/h) and slower.
@@ -119,7 +119,36 @@ echo "Setup validator Python: $PY"
 if ! grep -q 'node_id="MiniMaxH3AddGuide"' "$COMFYUI_PATH/comfy_extras/nodes_minimax_h3.py" 2>/dev/null; then
   echo "FATAL: this ComfyUI has no MiniMaxH3AddGuide node - it is older than 0.34."
   echo "         The bundled long-form workflow will not load. Use the image"
-  echo "         runpod/comfyui:1.4.0-rc.164-comfyuiv0.35.0-cuda12.8 (or newer)."
+  echo "         runpod/comfyui:1.4.0-comfyuiv0.35.0-cuda13.0."
+  exit 1
+fi
+
+# CUDA 13: comfy-kitchen's prebuilt kernels for the int8_convrot weights and INT8
+# attention need a CUDA 13 runtime and an r580+ driver; on cu128 they fall back to
+# slower Triton/PyTorch paths. PyTorch comes from the image (the volume's venv only
+# adds custom-node packages), so the image tag decides. The image also starts on
+# older-driver hosts (NVIDIA_DISABLE_REQUIRE), where cu130 PyTorch cannot see the
+# GPU - stop here, before 46 GB of downloads, rather than render on the CPU.
+TORCH_PY="$(command -v python3.12 || command -v python3)"
+if ! "$TORCH_PY" - <<'PY'
+import sys
+try:
+    import torch
+except Exception as exc:
+    sys.exit(f"FATAL: cannot import the image's PyTorch ({exc}).")
+build = torch.version.cuda or "none"
+print(f"PyTorch {torch.__version__}, CUDA build {build}")
+if not build.startswith("13."):
+    sys.exit("FATAL: this template needs the CUDA 13 image "
+             "runpod/comfyui:1.4.0-comfyuiv0.35.0-cuda13.0 (found CUDA build "
+             f"{build}). Change the template's container image.")
+if not torch.cuda.is_available():
+    sys.exit("FATAL: CUDA 13 PyTorch cannot use this GPU: the host driver is older "
+             "than r580. Redeploy with 'CUDA Versions' filtered to 13.0 in RunPod; "
+             "the same Network Volume can be reattached.")
+print(f"GPU: {torch.cuda.get_device_name(0)}")
+PY
+then
   exit 1
 fi
 

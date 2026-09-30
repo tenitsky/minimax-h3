@@ -32,7 +32,7 @@ The last chunk stitches the final video into ComfyUI/output. To resume, keep the
 
 ## Hardware and licence
 
-Start testing with **80 GB or more VRAM**. GPU memory use and quality have not been validated on a live H3 pod.
+Requires **CUDA 13**: when deploying, set Additional filters → CUDA Versions to **13.0**. Start testing with **80 GB or more VRAM**. GPU memory use and quality have not been validated on a live H3 pod.
 
 The H3 licence excludes the **US, EU, UK and South Korea** unless separately licensed. Check the licence and choose an eligible datacenter.
 
