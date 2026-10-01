@@ -8,12 +8,12 @@
    "id": 1,
    "type": "MarkdownNote",
    "pos": [
-    -1500,
-    -40
+    0,
+    0
    ],
    "size": [
-    460,
-    520
+    520,
+    880
    ],
    "flags": {},
    "order": 0,
@@ -23,9 +23,9 @@
    "properties": {
     "Node name for S&R": "MarkdownNote"
    },
-   "title": "Note: Inputs + how to run",
+   "title": "Start here",
    "widgets_values": [
-    "## Inputs\n\n- **Load Portrait** - one person facing the camera, face clearly visible, in front of the background you want to keep. It is pinned as the first and last frame of every chunk.\n- **Load Voiceover** - your speech track, any length. Mono is fine.\n- **Talking-Head Prompt** - describe the `subject` and the `background` you can see in the portrait, in a few concrete words. The node writes the full MiniMax-format prompt for every chunk. The fields come filled in for an example portrait; rewrite them for yours and keep the leading `subject:` / `background:` tags (optional, stripped).\n\nDrop files in `ComfyUI/input/`, or upload them through the nodes.\n\n## Running a long render\n\n1. Test one chunk (batch count 1) and check `output/h3_longform/<audio name>/chunk_0000.mp4`.\n2. Queue again with a **batch count of at least audio seconds / 8**, plus a margin. Each item renders the next unfinished chunk; surplus items are skipped in milliseconds.\n3. The last chunk stitches everything into `output/<audio name>.mp4` and clears the queue.\n\n**New video:** just load the new voiceover and queue - it starts at chunk 1 in its own folder. Interrupted? Queue again: finished chunks are skipped. To redo a finished video, change `name_suffix` or delete its folder."
+    "# MiniMax H3 Talking Head\n\n768 x 768, 8 steps with the 768p Turbo LoRA. Switch Turbo off for 20 steps of the base model: the best quality, about 2.5x slower.\n\n**Red nodes are the ones you set.** Everything else runs on its own. The stages run left to right, 1 to 7, each with a note underneath.\n\n1. **Load Portrait** - one person facing the camera, face clearly visible.\n2. **Load Voiceover** - your speech track, any length.\n3. **Talking-Head Prompt** - describe the person and background in the portrait.\n4. Run with **batch count 1** to test the first chunk. Check `output/h3_longform/<name>/chunk_0000.mp4`: lips, face, background.\n5. Run again with a batch count of at least **audio seconds / 8**, plus a margin. Each run renders the next unfinished chunk; extra runs are skipped in milliseconds.\n6. The final video lands in `output/`, then the queue is cleared.\n\n**Next video:** load the new voiceover and run. It starts at chunk 1 in its own folder; there is nothing to reset.\n\nIf the batch count box stops at 100, click Run several times: the queue adds up.\n\nLicence and full instructions: https://github.com/tenitsky/minimax-h3"
    ],
    "color": "#222",
    "bgcolor": "#000"
@@ -34,11 +34,11 @@
    "id": 2,
    "type": "MarkdownNote",
    "pos": [
-    -1500,
-    500
+    0,
+    930
    ],
    "size": [
-    460,
+    520,
     360
    ],
    "flags": {},
@@ -49,7 +49,7 @@
    "properties": {
     "Node name for S&R": "MarkdownNote"
    },
-   "title": "Note: LICENCE (read first)",
+   "title": "Licence (read first)",
    "widgets_values": [
     "## Licence - read before running\n\nMiniMax H3's open weights are **not licensed for use in the United States, the European Union, the United Kingdom or South Korea** (MiniMax H3 Community License, Excluded Territories). Using them there needs a separate licence from MiniMax: https://platform.minimax.io/h3-license\n\nAlso required by the licence: comply with its Acceptable Use Policy (no impersonating real people without consent, no content harming minors, no election misinformation...), and display \"MiniMax H3\" in any commercial product built on it.\n\nFull text: https://huggingface.co/MiniMaxAI/MiniMax-H3/blob/main/LICENSE"
    ],
@@ -60,12 +60,12 @@
    "id": 3,
    "type": "MarkdownNote",
    "pos": [
-    -500,
-    900
+    660,
+    1480
    ],
    "size": [
     520,
-    480
+    470
    ],
    "flags": {},
    "order": 2,
@@ -75,9 +75,9 @@
    "properties": {
     "Node name for S&R": "MarkdownNote"
    },
-   "title": "Why chunks are not whole seconds",
+   "title": "About stage 1",
    "widgets_values": [
-    "## Why chunks are not whole seconds\n\nH3 only generates **17k+5 frames** (124, 141, 158 ... 362 - about 5.2s to 15.1s at 24fps). Split plans every chunk on that grid:\n\n- `length` = frames to generate (always on the grid)\n- `carry_frames` = opening frames replayed from the previous chunk (0, 5 or 22)\n- `keep_frames` = frames written = `length - carry_frames - 1` (non-final chunks)\n\nThe pinned portrait at the end is dropped. With carry off, the next chunk opens on that portrait. With carry on, it replays the previous tail first; Write trims this lead-in so no frames play twice.\n\nThe final chunk is generated at the next grid length up and trimmed to the end of the track.\n\nThe prompt's first line tells H3 where each portrait lands, as MiniMax's prompt guide requires. It changes with every chunk, so the Talking-Head Prompt node writes it."
+    "## 1. Inputs\n\n**Portrait:** one person facing the camera, face clearly visible, in front of the background you want to keep. It is pinned as the first and last frame of every chunk. Any size; it is center-cropped to the canvas.\n\n**Canvas** (Width x Height). H3's native canvas has a **768 px short edge**, max 768 x 1344:\n\n| Aspect | Width x Height |\n|---|---|\n| 1:1 | 768 x 768 |\n| 3:4 | 768 x 1024 |\n| 9:16 | 768 x 1344 |\n| 16:9 | 1344 x 768 |\n\nDraft uses 544 x 544. Larger canvases need more memory and time."
    ],
    "color": "#222",
    "bgcolor": "#000"
@@ -86,12 +86,12 @@
    "id": 4,
    "type": "MarkdownNote",
    "pos": [
-    60,
-    900
+    1320,
+    930
    ],
    "size": [
-    420,
-    380
+    520,
+    560
    ],
    "flags": {},
    "order": 3,
@@ -101,9 +101,9 @@
    "properties": {
     "Node name for S&R": "MarkdownNote"
    },
-   "title": "Note: Resolution",
+   "title": "About stage 2",
    "widgets_values": [
-    "## Resolution\n\nH3's native canvas is a **768 px short edge**, max 768 x 1344. Set Width/Height to one of:\n\n| Aspect | Width x Height |\n|---|---|\n| 1:1 | 768 x 768 |\n| 3:4 | 768 x 1024 |\n| 9:16 | 768 x 1344 |\n| 16:9 | 1344 x 768 |\n\nThe portrait is center-cropped to this size before it reaches H3, so the first frame (stretched by the node) and the last frame (cropped by the node) are identical."
+    "## 2. Describe the shot - this keeps the background steady\n\nH3 pins your portrait only at the **first and last frame** of each chunk. Every frame in between is generated, and the model fills whatever the prompt leaves open: a changing backdrop, a lower-third, a channel logo.\n\n- **subject:** who is on screen and what they wear, as seen in the portrait.\n- **background:** what is behind them, concretely (colour, objects, lighting). Naming it is what holds it in place.\n- **delivery:** how they speak.\n- **extra** (optional): one small, calm action. Keep motion small.\n\nThe fields come filled in for an example portrait: rewrite them for yours. The `subject:` style tags are optional and are removed automatically.\n\nThe node writes MiniMax's exact prompt format for every chunk: a locked-off camera, one person, and no text, logos or graphics.\n\n**Still seeing changes?** Be more specific about the background, lower `max_seconds` on Split to 8, and use a portrait with a plain, evenly lit background."
    ],
    "color": "#222",
    "bgcolor": "#000"
@@ -112,12 +112,12 @@
    "id": 5,
    "type": "MarkdownNote",
    "pos": [
-    520,
-    900
+    1980,
+    590
    ],
    "size": [
-    440,
-    440
+    520,
+    560
    ],
    "flags": {},
    "order": 4,
@@ -127,9 +127,9 @@
    "properties": {
     "Node name for S&R": "MarkdownNote"
    },
-   "title": "Note: Speed / quality",
+   "title": "About stage 3",
    "widgets_values": [
-    "## Speed / quality\n\n**Turbo on** (default): the 8-step **768p** Turbo LoRA with its trained video/audio shift of 6/3. **Off**: 20 steps of the base model at its default shift 12/3 - roughly 2.5x slower per chunk, the best quality for a final pass.\n\n**Attention backend**: Comfy Kitchen INT8 attention, ComfyUI's built-in quantized attention (the same idea as SageAttention). Set it to `pytorch attention` to compare quality.\n\n**Model Sparse Attention** (Sol-Attn) is **bypassed** here to keep this the quality reference. Select it and press Ctrl+B to enable it. It skips low-weight attention blocks on long sequences, while attention to the portraits, text and voiceover stays exact. The Fast workflows have it on.\n\nTest a single chunk first (`batch count = 1`). If a chunk runs out of VRAM, lower `max_seconds` on Split or use a smaller canvas."
+    "## 3. Chunk plan\n\nH3 renders up to ~15 s at once, so the voiceover is cut into **chunks of up to 10 s**, preferably in pauses. Shorter chunks leave less time for the picture to drift between the pinned portraits.\n\n**Each run renders the next unfinished chunk**, found from the files on disk (`auto_chunk`). There is no counter to reset: a new voiceover starts at chunk 1 in its own folder, and an interrupted render continues where it stopped.\n\nH3 only generates **17k+5 frames** (124, 141 ... 362), so chunk lengths are planned on that grid; the extra pinned frame at each join is dropped, so nothing plays twice.\n\n**motion_carry** (experimental, default off): with 5 or 22 frames, each chunk opens on the previous chunk's last frames instead of the portrait, so head motion continues across the join. Choose it before a render starts; change `name_suffix` when switching it."
    ],
    "color": "#222",
    "bgcolor": "#000"
@@ -138,11 +138,11 @@
    "id": 6,
    "type": "MarkdownNote",
    "pos": [
-    1000,
-    900
+    2640,
+    2050
    ],
    "size": [
-    460,
+    520,
     420
    ],
    "flags": {},
@@ -153,9 +153,9 @@
    "properties": {
     "Node name for S&R": "MarkdownNote"
    },
-   "title": "Note: motion_carry",
+   "title": "About stage 4",
    "widgets_values": [
-    "## motion_carry (on Split) - off by default, experimental\n\n**off** - every chunk starts AND ends on the portrait. The pose resets at each join; cutting in pauses may help hide it.\n\n**5 / 22 frames** - after chunk 0, each chunk opens on the previous chunk's last 5 (~0.2s) or 22 (~0.9s) written frames, pinned as a clip to help carry motion across the join. The **last** frame stays pinned to the portrait to limit identity drift. Visual continuity and identity preservation still need GPU testing.\n\nThe lead-in frames are generated again (with their original audio) and trimmed by Write, so nothing plays twice and sync is unchanged. They count toward the chunk's length, so chunks get slightly shorter.\n\nPick it before a render starts and use a fresh session when changing it - it changes where every chunk begins. Queue chunks in order. Compare on a short clip first: if the join shows a colour or sharpness step, go back to off."
+    "## 4. Models + speed - loaded automatically\n\nNothing to set here. Setup downloads every file on first boot.\n\n**Turbo on** (default): the 8-step **768p** Turbo LoRA with its trained video/audio shift of 6/3. **Turbo off**: 20 steps of the base model at its default shift 12/3 - the best quality, about 2.5x slower.\n\n**Attention backend:** Comfy Kitchen INT8 attention, ComfyUI's built-in quantized attention (the same idea as SageAttention). Set it to `pytorch attention` to compare quality.\n\n**Model Sparse Attention** (Sol-Attn) is **bypassed** here to keep this the quality reference. Select it and press Ctrl+B to enable it."
    ],
    "color": "#222",
    "bgcolor": "#000"
@@ -164,12 +164,12 @@
    "id": 7,
    "type": "MarkdownNote",
    "pos": [
-    1500,
-    900
+    3300,
+    1210
    ],
    "size": [
-    460,
-    560
+    520,
+    300
    ],
    "flags": {},
    "order": 6,
@@ -179,9 +179,61 @@
    "properties": {
     "Node name for S&R": "MarkdownNote"
    },
-   "title": "Note: Keeping the background and the frame clean",
+   "title": "About stage 5",
    "widgets_values": [
-    "## Keeping the background and the frame clean\n\nH3 pins your portrait only at the **first and last frame** of each chunk. Every frame in between is generated, and the model fills whatever the prompt leaves open - a changing backdrop, a lower-third, a channel logo.\n\nThis workflow closes those gaps:\n\n- **Describe the portrait** in the Talking-Head Prompt: `subject` (who, what they wear) and `background` (what is behind them, concretely). Naming the background is what holds it in place.\n- The prompt uses MiniMax's own format exactly: the alignment line, then the three fields `integrated_multimodal_description`, `overall_soundscape` and `non_diegetic_music`. It states a locked-off camera, one person, and no text, logos or graphics.\n- Chunks are capped at **10 s** (H3 can do 15). Less time between anchors means less invention.\n- Each Turbo LoRA runs at the resolution and sigma shift it was distilled at.\n\n**Still seeing changes?** Make `background` more specific (colours, objects, lighting), lower `max_seconds` on Split to 8, or render the final pass with Turbo off.\n\nUse a portrait with a simple, evenly lit background, and nothing text-like in it: signs, screens and logos in the portrait tend to animate."
+    "## 5. Portrait + voice guidance\n\n- The portrait is cropped to the canvas and pinned as the **first and last frame** of the chunk (with motion carry, the first frames come from the previous chunk instead).\n- The chunk's slice of your voiceover is pinned at frame 0, so H3 animates the lips to your audio instead of inventing its own speech.\n- The text encoder reads the prompt together with the portraits.\n\nNothing to set here."
+   ],
+   "color": "#222",
+   "bgcolor": "#000"
+  },
+  {
+   "id": 8,
+   "type": "MarkdownNote",
+   "pos": [
+    3960,
+    1040
+   ],
+   "size": [
+    520,
+    220
+   ],
+   "flags": {},
+   "order": 7,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "properties": {
+    "Node name for S&R": "MarkdownNote"
+   },
+   "title": "About stage 6",
+   "widgets_values": [
+    "## 6. Sampling + decode\n\nFixed seed, Euler sampler and the step count the Turbo LoRA was distilled for. Nothing to set here.\n\nOut of memory? Lower `max_seconds` on Split (stage 3), or use the Draft workflow."
+   ],
+   "color": "#222",
+   "bgcolor": "#000"
+  },
+  {
+   "id": 9,
+   "type": "MarkdownNote",
+   "pos": [
+    4620,
+    550
+   ],
+   "size": [
+    520,
+    380
+   ],
+   "flags": {},
+   "order": 8,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "properties": {
+    "Node name for S&R": "MarkdownNote"
+   },
+   "title": "About stage 7",
+   "widgets_values": [
+    "## 7. Save + stitch\n\nEach chunk is saved to `output/h3_longform/<name>/chunk_0000.mp4`, ... as it finishes, so you can check one early.\n\nThe final video is saved as `output/<audio name><suffix>.mp4`, stitched with your **original** audio track, not H3's reconstruction.\n\n**Resume:** run again; finished chunks are skipped. **Redo one chunk:** delete its file and run; it is re-rendered and the video re-stitched. **Render a finished video again:** change `name_suffix`, or delete its folder under `output/h3_longform/`."
    ],
    "color": "#222",
    "bgcolor": "#000"
@@ -190,15 +242,15 @@
    "id": 10,
    "type": "LoadImage",
    "pos": [
-    -1000,
-    -40
+    690,
+    120
    ],
    "size": [
-    400,
-    460
+    460,
+    500
    ],
    "flags": {},
-   "order": 7,
+   "order": 9,
    "mode": 0,
    "inputs": [],
    "outputs": [
@@ -233,15 +285,15 @@
    "id": 11,
    "type": "LoadAudio",
    "pos": [
-    -1000,
-    460
+    690,
+    670
    ],
    "size": [
-    400,
-    140
+    460,
+    150
    ],
    "flags": {},
-   "order": 8,
+   "order": 10,
    "mode": 0,
    "inputs": [],
    "outputs": [
@@ -269,18 +321,62 @@
    "bgcolor": "#533"
   },
   {
+   "id": 21,
+   "type": "H3LongformAudioName",
+   "pos": [
+    690,
+    870
+   ],
+   "size": [
+    460,
+    130
+   ],
+   "flags": {},
+   "order": 11,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "localized_name": "name",
+     "name": "name",
+     "type": "STRING",
+     "links": [
+      52
+     ]
+    },
+    {
+     "localized_name": "filename",
+     "name": "filename",
+     "type": "STRING",
+     "links": [
+      53
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "H3LongformAudioName",
+    "cnr_id": "comfyui-h3-longform"
+   },
+   "title": "Output name (audio filename + name_suffix)",
+   "widgets_values": [
+    ".mp4",
+    "",
+    ""
+   ]
+  },
+  {
    "id": 13,
    "type": "PrimitiveInt",
    "pos": [
-    -1000,
-    770
+    690,
+    1050
    ],
    "size": [
-    190,
+    460,
     90
    ],
    "flags": {},
-   "order": 9,
+   "order": 12,
    "mode": 0,
    "inputs": [],
    "outputs": [
@@ -308,15 +404,15 @@
    "id": 14,
    "type": "PrimitiveInt",
    "pos": [
-    -790,
-    770
+    690,
+    1190
    ],
    "size": [
-    190,
+    460,
     90
    ],
    "flags": {},
-   "order": 10,
+   "order": 13,
    "mode": 0,
    "inputs": [],
    "outputs": [
@@ -341,18 +437,78 @@
    ]
   },
   {
+   "id": 30,
+   "type": "H3LongformPrompt",
+   "pos": [
+    1350,
+    120
+   ],
+   "size": [
+    460,
+    720
+   ],
+   "flags": {},
+   "order": 14,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "length",
+     "name": "length",
+     "type": "INT",
+     "link": 2,
+     "widget": {
+      "name": "length"
+     }
+    },
+    {
+     "localized_name": "carry_frames",
+     "name": "carry_frames",
+     "type": "INT",
+     "link": 3,
+     "widget": {
+      "name": "carry_frames"
+     }
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "prompt",
+     "name": "prompt",
+     "type": "STRING",
+     "links": [
+      24
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "H3LongformPrompt",
+    "cnr_id": "comfyui-h3-longform"
+   },
+   "title": "Talking-Head Prompt (describe subject + background)",
+   "widgets_values": [
+    124,
+    0,
+    "subject: a woman with long, dark brown wavy hair falling past her shoulders, wearing a dark navy V-neck blouse with a soft satin sheen, framed from the chest up and facing the camera",
+    "background: a plain, seamless light-grey studio backdrop with soft, even studio lighting and a gentle shadow-free falloff, with nothing else in the frame",
+    "delivery: a warm, friendly, confident voice at a relaxed pace",
+    "extra: She keeps a gentle, natural smile between sentences, and her hair and blouse stay neatly in place."
+   ],
+   "color": "#322",
+   "bgcolor": "#533"
+  },
+  {
    "id": 20,
    "type": "H3LongformSplit",
    "pos": [
-    -500,
-    500
+    2010,
+    120
    ],
    "size": [
-    400,
-    300
+    460,
+    380
    ],
    "flags": {},
-   "order": 11,
+   "order": 15,
    "mode": 0,
    "inputs": [
     {
@@ -440,7 +596,7 @@
     "Node name for S&R": "H3LongformSplit",
     "cnr_id": "comfyui-h3-longform"
    },
-   "title": "1. Split Audio Chunk (H3 frame grid)",
+   "title": "Split Audio Chunk (next unfinished chunk)",
    "widgets_values": [
     0,
     8.0,
@@ -453,122 +609,18 @@
    ]
   },
   {
-   "id": 21,
-   "type": "H3LongformAudioName",
-   "pos": [
-    -500,
-    810
-   ],
-   "size": [
-    400,
-    110
-   ],
-   "flags": {},
-   "order": 12,
-   "mode": 0,
-   "inputs": [],
-   "outputs": [
-    {
-     "localized_name": "name",
-     "name": "name",
-     "type": "STRING",
-     "links": [
-      52
-     ]
-    },
-    {
-     "localized_name": "filename",
-     "name": "filename",
-     "type": "STRING",
-     "links": [
-      53
-     ]
-    }
-   ],
-   "properties": {
-    "Node name for S&R": "H3LongformAudioName",
-    "cnr_id": "comfyui-h3-longform"
-   },
-   "title": "Output name (audio filename + name_suffix)",
-   "widgets_values": [
-    ".mp4",
-    "",
-    ""
-   ]
-  },
-  {
-   "id": 30,
-   "type": "H3LongformPrompt",
-   "pos": [
-    -500,
-    -40
-   ],
-   "size": [
-    520,
-    500
-   ],
-   "flags": {},
-   "order": 13,
-   "mode": 0,
-   "inputs": [
-    {
-     "localized_name": "length",
-     "name": "length",
-     "type": "INT",
-     "link": 2,
-     "widget": {
-      "name": "length"
-     }
-    },
-    {
-     "localized_name": "carry_frames",
-     "name": "carry_frames",
-     "type": "INT",
-     "link": 3,
-     "widget": {
-      "name": "carry_frames"
-     }
-    }
-   ],
-   "outputs": [
-    {
-     "localized_name": "prompt",
-     "name": "prompt",
-     "type": "STRING",
-     "links": [
-      24
-     ]
-    }
-   ],
-   "properties": {
-    "Node name for S&R": "H3LongformPrompt",
-    "cnr_id": "comfyui-h3-longform"
-   },
-   "title": "Talking-Head Prompt (describe subject + background)",
-   "widgets_values": [
-    124,
-    0,
-    "subject: a woman with long, dark brown wavy hair falling past her shoulders, wearing a dark navy V-neck blouse with a soft satin sheen, framed from the chest up and facing the camera",
-    "background: a plain, seamless light-grey studio backdrop with soft, even studio lighting and a gentle shadow-free falloff, with nothing else in the frame",
-    "delivery: a warm, friendly, confident voice at a relaxed pace",
-    "extra: She keeps a gentle, natural smile between sentences, and her hair and blouse stay neatly in place."
-   ],
-   "color": "#322",
-   "bgcolor": "#533"
-  },
-  {
    "id": 40,
    "type": "UNETLoader",
    "pos": [
-    60,
-    -540
+    2670,
+    120
    ],
    "size": [
-    520,
+    460,
     90
    ],
    "flags": {},
-   "order": 14,
+   "order": 16,
    "mode": 0,
    "inputs": [],
    "outputs": [
@@ -602,15 +654,15 @@
    "id": 41,
    "type": "LoraLoaderModelOnly",
    "pos": [
-    60,
-    -420
+    2670,
+    260
    ],
    "size": [
-    520,
+    460,
     90
    ],
    "flags": {},
-   "order": 15,
+   "order": 17,
    "mode": 0,
    "inputs": [
     {
@@ -651,15 +703,15 @@
    "id": 75,
    "type": "MiniMaxH3SigmaShift",
    "pos": [
-    60,
-    -300
+    2670,
+    400
    ],
    "size": [
-    520,
+    460,
     110
    ],
    "flags": {},
-   "order": 16,
+   "order": 18,
    "mode": 0,
    "inputs": [
     {
@@ -690,144 +742,18 @@
    ]
   },
   {
-   "id": 42,
-   "type": "CLIPLoader",
+   "id": 45,
+   "type": "PrimitiveBoolean",
    "pos": [
-    60,
-    -160
+    690,
+    1330
    ],
    "size": [
-    520,
-    110
-   ],
-   "flags": {},
-   "order": 17,
-   "mode": 0,
-   "inputs": [],
-   "outputs": [
-    {
-     "localized_name": "CLIP",
-     "name": "CLIP",
-     "type": "CLIP",
-     "links": [
-      17
-     ]
-    }
-   ],
-   "properties": {
-    "Node name for S&R": "CLIPLoader",
-    "cnr_id": "comfy-core",
-    "models": [
-     {
-      "name": "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
-      "url": "https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
-      "directory": "text_encoders"
-     }
-    ]
-   },
-   "widgets_values": [
-    "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
-    "minimax",
-    "default"
-   ]
-  },
-  {
-   "id": 43,
-   "type": "VAELoader",
-   "pos": [
-    60,
-    -20
-   ],
-   "size": [
-    520,
-    60
-   ],
-   "flags": {},
-   "order": 18,
-   "mode": 0,
-   "inputs": [],
-   "outputs": [
-    {
-     "localized_name": "VAE",
-     "name": "VAE",
-     "type": "VAE",
-     "links": [
-      18,
-      30,
-      44
-     ]
-    }
-   ],
-   "properties": {
-    "Node name for S&R": "VAELoader",
-    "cnr_id": "comfy-core",
-    "models": [
-     {
-      "name": "minimax_h3_video_vae_int8_convrot.safetensors",
-      "url": "https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/vae/minimax_h3_video_vae_int8_convrot.safetensors",
-      "directory": "vae"
-     }
-    ]
-   },
-   "title": "Video VAE",
-   "widgets_values": [
-    "minimax_h3_video_vae_int8_convrot.safetensors"
-   ]
-  },
-  {
-   "id": 44,
-   "type": "VAELoader",
-   "pos": [
-    60,
-    70
-   ],
-   "size": [
-    520,
+    460,
     60
    ],
    "flags": {},
    "order": 19,
-   "mode": 0,
-   "inputs": [],
-   "outputs": [
-    {
-     "localized_name": "VAE",
-     "name": "VAE",
-     "type": "VAE",
-     "links": [
-      31
-     ]
-    }
-   ],
-   "properties": {
-    "Node name for S&R": "VAELoader",
-    "cnr_id": "comfy-core",
-    "models": [
-     {
-      "name": "minimax_h3_audio_vae_fp32.safetensors",
-      "url": "https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/vae/minimax_h3_audio_vae_fp32.safetensors",
-      "directory": "vae"
-     }
-    ]
-   },
-   "title": "Audio VAE",
-   "widgets_values": [
-    "minimax_h3_audio_vae_fp32.safetensors"
-   ]
-  },
-  {
-   "id": 45,
-   "type": "PrimitiveBoolean",
-   "pos": [
-    60,
-    170
-   ],
-   "size": [
-    250,
-    60
-   ],
-   "flags": {},
-   "order": 20,
    "mode": 0,
    "inputs": [],
    "outputs": [
@@ -845,7 +771,7 @@
     "Node name for S&R": "PrimitiveBoolean",
     "cnr_id": "comfy-core"
    },
-   "title": "Turbo LoRA (8 steps)",
+   "title": "Turbo LoRA on (8 steps) / off (20 steps)",
    "widgets_values": [
     true
    ],
@@ -856,15 +782,15 @@
    "id": 46,
    "type": "PrimitiveInt",
    "pos": [
-    60,
-    260
+    2670,
+    560
    ],
    "size": [
-    190,
+    460,
     90
    ],
    "flags": {},
-   "order": 21,
+   "order": 20,
    "mode": 0,
    "inputs": [],
    "outputs": [
@@ -891,15 +817,15 @@
    "id": 47,
    "type": "PrimitiveInt",
    "pos": [
-    270,
-    260
+    2670,
+    700
    ],
    "size": [
-    190,
+    460,
     90
    ],
    "flags": {},
-   "order": 22,
+   "order": 21,
    "mode": 0,
    "inputs": [],
    "outputs": [
@@ -926,15 +852,15 @@
    "id": 48,
    "type": "ComfySwitchNode",
    "pos": [
-    620,
-    -540
+    2670,
+    840
    ],
    "size": [
-    250,
+    460,
     110
    ],
    "flags": {},
-   "order": 23,
+   "order": 22,
    "mode": 0,
    "inputs": [
     {
@@ -982,15 +908,15 @@
    "id": 49,
    "type": "ComfySwitchNode",
    "pos": [
-    620,
-    260
+    2670,
+    1000
    ],
    "size": [
-    250,
+    460,
     110
    ],
    "flags": {},
-   "order": 24,
+   "order": 23,
    "mode": 0,
    "inputs": [
     {
@@ -1038,15 +964,15 @@
    "id": 76,
    "type": "ModelAttentionBackend",
    "pos": [
-    1400,
-    -660
+    2670,
+    1160
    ],
    "size": [
-    300,
-    60
+    460,
+    80
    ],
    "flags": {},
-   "order": 25,
+   "order": 24,
    "mode": 0,
    "inputs": [
     {
@@ -1079,15 +1005,15 @@
    "id": 77,
    "type": "BlockSparseAttention",
    "pos": [
-    1400,
-    -560
+    2670,
+    1290
    ],
    "size": [
-    300,
-    230
+    460,
+    270
    ],
    "flags": {},
-   "order": 26,
+   "order": 25,
    "mode": 4,
    "inputs": [
     {
@@ -1126,18 +1052,144 @@
    ]
   },
   {
-   "id": 50,
-   "type": "ImageScale",
+   "id": 42,
+   "type": "CLIPLoader",
    "pos": [
-    620,
-    -380
+    2670,
+    1610
    ],
    "size": [
-    300,
-    170
+    460,
+    110
+   ],
+   "flags": {},
+   "order": 26,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "localized_name": "CLIP",
+     "name": "CLIP",
+     "type": "CLIP",
+     "links": [
+      17
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "CLIPLoader",
+    "cnr_id": "comfy-core",
+    "models": [
+     {
+      "name": "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+      "url": "https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+      "directory": "text_encoders"
+     }
+    ]
+   },
+   "widgets_values": [
+    "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+    "minimax",
+    "default"
+   ]
+  },
+  {
+   "id": 43,
+   "type": "VAELoader",
+   "pos": [
+    2670,
+    1770
+   ],
+   "size": [
+    460,
+    70
    ],
    "flags": {},
    "order": 27,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "localized_name": "VAE",
+     "name": "VAE",
+     "type": "VAE",
+     "links": [
+      18,
+      30,
+      44
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "VAELoader",
+    "cnr_id": "comfy-core",
+    "models": [
+     {
+      "name": "minimax_h3_video_vae_int8_convrot.safetensors",
+      "url": "https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/vae/minimax_h3_video_vae_int8_convrot.safetensors",
+      "directory": "vae"
+     }
+    ]
+   },
+   "title": "Video VAE",
+   "widgets_values": [
+    "minimax_h3_video_vae_int8_convrot.safetensors"
+   ]
+  },
+  {
+   "id": 44,
+   "type": "VAELoader",
+   "pos": [
+    2670,
+    1890
+   ],
+   "size": [
+    460,
+    70
+   ],
+   "flags": {},
+   "order": 28,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "localized_name": "VAE",
+     "name": "VAE",
+     "type": "VAE",
+     "links": [
+      31
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "VAELoader",
+    "cnr_id": "comfy-core",
+    "models": [
+     {
+      "name": "minimax_h3_audio_vae_fp32.safetensors",
+      "url": "https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/vae/minimax_h3_audio_vae_fp32.safetensors",
+      "directory": "vae"
+     }
+    ]
+   },
+   "title": "Audio VAE",
+   "widgets_values": [
+    "minimax_h3_audio_vae_fp32.safetensors"
+   ]
+  },
+  {
+   "id": 50,
+   "type": "ImageScale",
+   "pos": [
+    3330,
+    120
+   ],
+   "size": [
+    460,
+    170
+   ],
+   "flags": {},
+   "order": 29,
    "mode": 0,
    "inputs": [
     {
@@ -1192,15 +1244,15 @@
    "id": 53,
    "type": "H3LongformCarry",
    "pos": [
-    620,
-    -170
+    3330,
+    340
    ],
    "size": [
-    300,
+    460,
     150
    ],
    "flags": {},
-   "order": 28,
+   "order": 30,
    "mode": 0,
    "inputs": [
     {
@@ -1260,15 +1312,15 @@
    "id": 51,
    "type": "MiniMaxH3ImageToVideo",
    "pos": [
-    960,
-    -300
+    3330,
+    540
    ],
    "size": [
-    400,
+    460,
     330
    ],
    "flags": {},
-   "order": 29,
+   "order": 31,
    "mode": 0,
    "inputs": [
     {
@@ -1357,6 +1409,7 @@
     "Node name for S&R": "MiniMaxH3ImageToVideo",
     "cnr_id": "comfy-core"
    },
+   "title": "Portraits + prompt (first/last frame)",
    "widgets_values": [
     "",
     768,
@@ -1368,15 +1421,15 @@
    "id": 52,
    "type": "MiniMaxH3AddGuide",
    "pos": [
-    960,
-    80
+    3330,
+    920
    ],
    "size": [
-    400,
-    190
+    460,
+    200
    ],
    "flags": {},
-   "order": 30,
+   "order": 32,
    "mode": 0,
    "inputs": [
     {
@@ -1443,15 +1496,15 @@
    "id": 60,
    "type": "BasicGuider",
    "pos": [
-    1400,
-    -300
+    3990,
+    120
    ],
    "size": [
-    240,
-    50
+    460,
+    70
    ],
    "flags": {},
-   "order": 31,
+   "order": 33,
    "mode": 0,
    "inputs": [
     {
@@ -1486,15 +1539,15 @@
    "id": 61,
    "type": "RandomNoise",
    "pos": [
-    1400,
-    -210
+    3990,
+    240
    ],
    "size": [
-    300,
-    90
+    460,
+    100
    ],
    "flags": {},
-   "order": 32,
+   "order": 34,
    "mode": 0,
    "inputs": [],
    "outputs": [
@@ -1520,15 +1573,15 @@
    "id": 62,
    "type": "KSamplerSelect",
    "pos": [
-    1400,
-    -90
+    3990,
+    390
    ],
    "size": [
-    300,
-    60
+    460,
+    70
    ],
    "flags": {},
-   "order": 33,
+   "order": 35,
    "mode": 0,
    "inputs": [],
    "outputs": [
@@ -1553,15 +1606,15 @@
    "id": 63,
    "type": "BasicScheduler",
    "pos": [
-    1400,
-    0
+    3990,
+    510
    ],
    "size": [
-    300,
-    110
+    460,
+    120
    ],
    "flags": {},
-   "order": 34,
+   "order": 36,
    "mode": 0,
    "inputs": [
     {
@@ -1604,15 +1657,15 @@
    "id": 64,
    "type": "SamplerCustomAdvanced",
    "pos": [
-    1740,
-    -300
+    3990,
+    680
    ],
    "size": [
-    260,
-    330
+    460,
+    150
    ],
    "flags": {},
-   "order": 35,
+   "order": 37,
    "mode": 0,
    "inputs": [
     {
@@ -1671,15 +1724,15 @@
    "id": 65,
    "type": "VAEDecode",
    "pos": [
-    1740,
-    80
+    3990,
+    880
    ],
    "size": [
-    260,
-    50
+    460,
+    70
    ],
    "flags": {},
-   "order": 36,
+   "order": 38,
    "mode": 0,
    "inputs": [
     {
@@ -1714,15 +1767,15 @@
    "id": 70,
    "type": "H3LongformWrite",
    "pos": [
-    2040,
-    -300
+    4650,
+    120
    ],
    "size": [
-    400,
-    310
+    460,
+    340
    ],
    "flags": {},
-   "order": 37,
+   "order": 39,
    "mode": 0,
    "inputs": [
     {
@@ -1812,7 +1865,7 @@
     "Node name for S&R": "H3LongformWrite",
     "cnr_id": "comfyui-h3-longform"
    },
-   "title": "2. Write + Stitch",
+   "title": "Write chunk + stitch final video",
    "widgets_values": [
     0,
     1,
@@ -2250,14 +2303,106 @@
    "STRING"
   ]
  ],
- "groups": [],
+ "groups": [
+  {
+   "id": 1,
+   "title": "1. Your inputs",
+   "bounding": [
+    660,
+    0,
+    520,
+    1420
+   ],
+   "color": "#a1309b",
+   "font_size": 26,
+   "flags": {}
+  },
+  {
+   "id": 2,
+   "title": "2. Describe the shot",
+   "bounding": [
+    1320,
+    0,
+    520,
+    870
+   ],
+   "color": "#b06634",
+   "font_size": 26,
+   "flags": {}
+  },
+  {
+   "id": 3,
+   "title": "3. Chunk plan (automatic)",
+   "bounding": [
+    1980,
+    0,
+    520,
+    530
+   ],
+   "color": "#8a8a2c",
+   "font_size": 26,
+   "flags": {}
+  },
+  {
+   "id": 4,
+   "title": "4. Models + speed (automatic)",
+   "bounding": [
+    2640,
+    0,
+    520,
+    1990
+   ],
+   "color": "#3f789e",
+   "font_size": 26,
+   "flags": {}
+  },
+  {
+   "id": 5,
+   "title": "5. Portrait + voice guidance",
+   "bounding": [
+    3300,
+    0,
+    520,
+    1150
+   ],
+   "color": "#4a7a4a",
+   "font_size": 26,
+   "flags": {}
+  },
+  {
+   "id": 6,
+   "title": "6. Sampling",
+   "bounding": [
+    3960,
+    0,
+    520,
+    980
+   ],
+   "color": "#5a5a8a",
+   "font_size": 26,
+   "flags": {}
+  },
+  {
+   "id": 7,
+   "title": "7. Save + stitch",
+   "bounding": [
+    4620,
+    0,
+    520,
+    490
+   ],
+   "color": "#8a4a4a",
+   "font_size": 26,
+   "flags": {}
+  }
+ ],
  "config": {},
  "extra": {
   "ds": {
-   "scale": 0.6,
+   "scale": 0.55,
    "offset": [
-    1600,
-    700
+    80,
+    80
    ]
   }
  },

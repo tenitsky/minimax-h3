@@ -51,6 +51,7 @@ class LongformTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory(prefix="h3-tests-")
         self.addCleanup(self.tmp.cleanup)
         folder_paths.get_output_directory = lambda: self.tmp.name
+        folder_paths.get_input_directory = lambda: os.path.join(self.tmp.name, "input")
 
     def prompt(self, mode, session="test"):
         return {
@@ -114,8 +115,9 @@ class LongformTests(unittest.TestCase):
                     self.assertIn("Picture 1 (from Shot 1) aligns with the 0.00-second", parts[0])
                     self.assertIn("established by Picture 2.", text)
         # Workflow defaults carry "subject:" style tags; none may reach the model.
-        for name, variant in builder.VARIANTS.items():
-            node = next(n for n in builder.build(name)["nodes"] if n["type"] == "H3LongformPrompt")
+        for w in builder.WORKFLOWS:
+            node = next(n for n in builder.build(w["variant"], w["batch"])["nodes"]
+                        if n["type"] == "H3LongformPrompt")
             fields = node["widgets_values"][2:]
             self.assertEqual([f.split(":")[0] for f in fields],
                              ["subject", "background", "delivery", "extra"])
@@ -132,9 +134,9 @@ class LongformTests(unittest.TestCase):
         self.assertIn(h3.DEFAULT_BACKGROUND, blank)
 
     def test_workflow_carry_connections_and_schemas(self):
-        for name, variant in builder.VARIANTS.items():
-            with self.subTest(variant=name):
-                self.check_workflow(builder.build(name), variant["path"])
+        for w in builder.WORKFLOWS:
+            with self.subTest(workflow=w["path"]):
+                self.check_workflow(builder.build(w["variant"], w["batch"]), w["path"])
 
     def check_workflow(self, wf, filename):
         self.assertEqual(wf, json.loads((ROOT / "workflows" / filename).read_text(encoding="utf-8")))
@@ -166,7 +168,9 @@ class LongformTests(unittest.TestCase):
             self.assertEqual(tuple(o["type"] for o in node["outputs"]), cls.RETURN_TYPES)
             for inp in node["inputs"]:
                 self.assertIn(inp["name"], inputs)
-            widgets = [v for v in inputs.values() if isinstance(v[0], list) or v[0] in ("INT", "FLOAT", "BOOLEAN", "STRING")]
+            widgets = [v for v in inputs.values()
+                       if (isinstance(v[0], list) or v[0] in ("INT", "FLOAT", "BOOLEAN", "STRING"))
+                       and not (len(v) > 1 and v[1].get("forceInput"))]
             self.assertEqual(len(widgets), len(node["widgets_values"]))
         self.assertEqual(nodes[20]["widgets_values"][6:], ["off", True])
 
@@ -282,11 +286,67 @@ class LongformTests(unittest.TestCase):
             self.assertEqual(item("video1")[0], count - 1)
             self.assertIsNone(item("video1"))
 
+    @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"), "ffmpeg and ffprobe required")
+    def test_batch_folder_renders_each_file_once_in_name_order(self):
+        # Three voiceovers in a folder, rendered through Folder -> Split -> Write the
+        # way the batch workflows wire them, with a queue counter that means nothing.
+        folder = Path(self.tmp.name) / "input" / "batch_audio"
+        folder.mkdir(parents=True)
+        ff = shutil.which("ffmpeg")
+        for name, seconds in (("talk 10.mp3", 6), ("talk 2.wav", 13), ("talk 1.flac", 6)):
+            subprocess.run([ff, "-v", "error", "-f", "lavfi", "-i", f"sine=frequency=300:duration={seconds}",
+                            "-ac", "1", str(folder / name)], check=True)
+        (folder / "notes.txt").write_text("not audio")
+        source, split, writer = h3.H3LongformAudioFolder(), h3.H3LongformSplit(), h3.H3LongformWrite()
+        rendered = []
+
+        def item():
+            picked = source.next_file("batch_audio", "_fast", True)
+            if isinstance(picked[0], ExecutionBlocker):
+                return None
+            audio, session, filename, number, total = picked
+            self.assertEqual(audio["sample_rate"], h3.BATCH_SAMPLE_RATE)
+            self.assertEqual(audio["waveform"].shape[1], 2)
+            result = split.split(audio, 4321, 8, 5, 10, auto_chunk=True, session=session,
+                                 prompt=self.prompt("off", "wrong-session"))
+            chunk, length, keep, count, last, _, _, _, index = result
+            writer.write(torch.zeros((length, 16, 16, 3)), audio, index, count, keep, session,
+                         filename, chunk, False, 0, self.prompt("off", session))
+            rendered.append((session, index, count, number, total))
+            return session
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            while item():
+                self.assertLess(len(rendered), 20, "batch never finished")
+        sessions = [r[0] for r in rendered]
+        self.assertEqual(list(dict.fromkeys(sessions)), ["talk 1_fast", "talk 2_fast", "talk 10_fast"])
+        self.assertEqual({r[4] for r in rendered}, {3})
+        for session in ("talk 1_fast", "talk 2_fast", "talk 10_fast"):
+            chunks = [r[1] for r in rendered if r[0] == session]
+            self.assertEqual(chunks, list(range(chunks[-1] + 1)) if chunks else [])
+            self.assertTrue((Path(self.tmp.name) / f"{session}.mp4").exists())
+            self.assertFalse((Path(h3._session_dir(session)) / "wrong-session").exists())
+        self.assertGreater(len([r for r in rendered if r[0] == "talk 2_fast"]), 1)
+        self.assertFalse((Path(self.tmp.name) / "h3_longform" / "wrong-session").exists())
+        # A file added later is picked up; finished ones are not redone.
+        shutil.copy(folder / "talk 1.flac", folder / "talk 3.flac")
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(item(), "talk 3_fast")
+        # Same-named files would share a video and a chunk folder.
+        shutil.copy(folder / "talk 1.flac", folder / "talk 1.wav")
+        with self.assertRaisesRegex(RuntimeError, "different names"):
+            source.next_file("batch_audio", "_fast", True)
+
+    def test_batch_folder_is_created_and_explains_when_empty(self):
+        with self.assertRaisesRegex(RuntimeError, "No audio files"):
+            h3.H3LongformAudioFolder().next_file("batch_audio")
+        self.assertTrue((Path(self.tmp.name) / "input" / "batch_audio").is_dir())
+
     def test_resume_cache_is_invalidated(self):
         # ComfyUI evaluates IS_CHANGED with the hidden prompt set to {} and linked
         # inputs omitted (execution.py IsChangedCache), so none of these nodes can
         # see the audio filename or session there. Each must always re-run.
-        for cls, widgets in ((h3.H3LongformSplit, {}),
+        for cls, widgets in ((h3.H3LongformSplit, {}), (h3.H3LongformAudioFolder, {}),
                              (h3.H3LongformCarry, {}),
                              (h3.H3LongformAudioName, {"suffix": ".mp4", "source_title": "",
                                                        "name_suffix": ""})):

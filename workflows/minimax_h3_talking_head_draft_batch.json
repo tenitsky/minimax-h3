@@ -1,8 +1,8 @@
 {
- "id": "6e1a9b37-2c55-4f0e-8a31-b7d4c9e0f215",
+ "id": "e5b28c71-4f9a-4d3e-a6c2-8b17f0d3e549",
  "revision": 0,
  "last_node_id": 77,
- "last_link_id": 46,
+ "last_link_id": 48,
  "nodes": [
   {
    "id": 1,
@@ -25,7 +25,7 @@
    },
    "title": "Start here",
    "widgets_values": [
-    "# MiniMax H3 Talking Head - Fast\n\n768 x 768, 4 steps with the dedicated 4-step 768p Turbo LoRA and sparse attention. The everyday preset.\n\n**Red nodes are the ones you set.** Everything else runs on its own. The stages run left to right, 1 to 7, each with a note underneath.\n\n1. **Load Portrait** - one person facing the camera, face clearly visible.\n2. **Load Voiceover** - your speech track, any length.\n3. **Talking-Head Prompt** - describe the person and background in the portrait.\n4. Run with **batch count 1** to test the first chunk. Check `output/h3_longform/<name>/chunk_0000.mp4`: lips, face, background.\n5. Run again with a batch count of at least **audio seconds / 8**, plus a margin. Each run renders the next unfinished chunk; extra runs are skipped in milliseconds.\n6. The final video lands in `output/`, then the queue is cleared.\n\n**Next video:** load the new voiceover and run. It starts at chunk 1 in its own folder; there is nothing to reset.\n\nIf the batch count box stops at 100, click Run several times: the queue adds up.\n\nLicence and full instructions: https://github.com/tenitsky/minimax-h3"
+    "# MiniMax H3 Talking Head - Draft - Batch\n\n544 x 544, 4 steps with the 544p Turbo LoRA and sparse attention: about half the pixels of the 768 workflows. Check timing and framing here, then render the final with Fast or the standard workflow. (The LoRA file says 8step; its authors support four-step use.)\n\n**Red nodes are the ones you set.** Everything else runs on its own. The stages run left to right, 1 to 7, each with a note underneath.\n\n1. **Load Portrait** - one person facing the camera, face clearly visible.\n2. **Audio From Folder** - put your voiceovers in `ComfyUI/input/batch_audio/` (.wav, .mp3, .flac, .m4a, .aac, .ogg, .opus). Each file becomes its own video, in name order. Upload them with Jupyter (port 8888) or FileBrowser.\n3. **Talking-Head Prompt** - describe the person and background in the portrait.\n4. Run with **batch count 1** to test the first chunk of the first file. Check `output/h3_longform/<name>/chunk_0000.mp4`: lips, face, background.\n5. Run again with a large batch count: roughly the **total seconds of all files / 8**, plus a margin. Each run renders the next unfinished chunk of the next unfinished file. When every file is done the queue is cleared, so extra runs cost nothing.\n6. The final video lands in `output/`, then the queue is cleared.\n\n**Add files later:** drop them in the folder and run again; finished videos are skipped. The same portrait and description are used for every file.\n\nIf the batch count box stops at 100, click Run several times: the queue adds up.\n\nLicence and full instructions: https://github.com/tenitsky/minimax-h3"
    ],
    "color": "#222",
    "bgcolor": "#000"
@@ -61,7 +61,7 @@
    "type": "MarkdownNote",
    "pos": [
     660,
-    1370
+    1230
    ],
    "size": [
     520,
@@ -155,7 +155,7 @@
    },
    "title": "About stage 4",
    "widgets_values": [
-    "## 4. Models + speed - loaded automatically\n\nNothing to set here. Setup downloads every file on first boot.\n\n**Turbo LoRA: 4-step 768p**, 4 steps, with its trained video/audio shift of 6/3.\n\n**Attention backend:** Comfy Kitchen INT8 attention, ComfyUI's built-in quantized attention (the same idea as SageAttention). Set it to `pytorch attention` to compare quality.\n\n**Model Sparse Attention** (Sol-Attn) is **on**. It skips low-weight attention blocks on long sequences; attention to the portraits, text and voiceover stays exact. Ctrl+B bypasses it to compare quality."
+    "## 4. Models + speed - loaded automatically\n\nNothing to set here. Setup downloads every file on first boot.\n\n**Turbo LoRA: 544p, four-step mode**, 4 steps, with its trained video/audio shift of 12/3.\n\n**Attention backend:** Comfy Kitchen INT8 attention, ComfyUI's built-in quantized attention (the same idea as SageAttention). Set it to `pytorch attention` to compare quality.\n\n**Model Sparse Attention** (Sol-Attn) is **on**. It skips low-weight attention blocks on long sequences; attention to the portraits, text and voiceover stays exact. Ctrl+B bypasses it to compare quality."
    ],
    "color": "#222",
    "bgcolor": "#000"
@@ -233,7 +233,7 @@
    },
    "title": "About stage 7",
    "widgets_values": [
-    "## 7. Save + stitch\n\nEach chunk is saved to `output/h3_longform/<name>/chunk_0000.mp4`, ... as it finishes, so you can check one early.\n\nThe final video is saved as `output/<audio name><suffix>.mp4`, stitched with your **original** audio track, not H3's reconstruction.\n\n**Resume:** run again; finished chunks are skipped. **Redo one chunk:** delete its file and run; it is re-rendered and the video re-stitched. **Render a finished video again:** change `name_suffix`, or delete its folder under `output/h3_longform/`."
+    "## 7. Save + stitch\n\nEach chunk is saved to `output/h3_longform/<name>/chunk_0000.mp4`, ... as it finishes, so you can check one early.\n\nEach file's video is saved as `output/<file name><suffix>.mp4`, stitched with your **original** audio track, not H3's reconstruction.\n\n**Resume:** run again; finished chunks are skipped. **Redo one chunk:** delete its file and run; it is re-rendered and the video re-stitched. **Render a finished video again:** change `name_suffix`, or delete its folder under `output/h3_longform/`."
    ],
    "color": "#222",
    "bgcolor": "#000"
@@ -283,14 +283,14 @@
   },
   {
    "id": 11,
-   "type": "LoadAudio",
+   "type": "H3LongformAudioFolder",
    "pos": [
     690,
     670
    ],
    "size": [
     460,
-    150
+    190
    ],
    "flags": {},
    "order": 10,
@@ -298,50 +298,22 @@
    "inputs": [],
    "outputs": [
     {
-     "localized_name": "AUDIO",
-     "name": "AUDIO",
+     "localized_name": "audio",
+     "name": "audio",
      "type": "AUDIO",
      "links": [
       1,
       39
      ]
-    }
-   ],
-   "properties": {
-    "Node name for S&R": "LoadAudio",
-    "cnr_id": "comfy-core"
-   },
-   "title": "Load Voiceover",
-   "widgets_values": [
-    "voiceover.mp3",
-    null,
-    null
-   ],
-   "color": "#322",
-   "bgcolor": "#533"
-  },
-  {
-   "id": 21,
-   "type": "H3LongformAudioName",
-   "pos": [
-    690,
-    870
-   ],
-   "size": [
-    460,
-    130
-   ],
-   "flags": {},
-   "order": 11,
-   "mode": 0,
-   "inputs": [],
-   "outputs": [
+    },
     {
      "localized_name": "name",
      "name": "name",
      "type": "STRING",
      "links": [
-      45
+      45,
+      46,
+      47
      ]
     },
     {
@@ -349,34 +321,48 @@
      "name": "filename",
      "type": "STRING",
      "links": [
-      46
+      48
      ]
+    },
+    {
+     "localized_name": "file_number",
+     "name": "file_number",
+     "type": "INT",
+     "links": []
+    },
+    {
+     "localized_name": "total_files",
+     "name": "total_files",
+     "type": "INT",
+     "links": []
     }
    ],
    "properties": {
-    "Node name for S&R": "H3LongformAudioName",
+    "Node name for S&R": "H3LongformAudioFolder",
     "cnr_id": "comfyui-h3-longform"
    },
-   "title": "Output name (audio filename + name_suffix)",
+   "title": "Audio From Folder (one video per file)",
    "widgets_values": [
-    ".mp4",
-    "",
-    "_fast"
-   ]
+    "batch_audio",
+    "_draft",
+    true
+   ],
+   "color": "#322",
+   "bgcolor": "#533"
   },
   {
    "id": 13,
    "type": "PrimitiveInt",
    "pos": [
     690,
-    1050
+    910
    ],
    "size": [
     460,
     90
    ],
    "flags": {},
-   "order": 12,
+   "order": 11,
    "mode": 0,
    "inputs": [],
    "outputs": [
@@ -396,7 +382,7 @@
    },
    "title": "Width",
    "widgets_values": [
-    768,
+    544,
     "fixed"
    ]
   },
@@ -405,14 +391,14 @@
    "type": "PrimitiveInt",
    "pos": [
     690,
-    1190
+    1050
    ],
    "size": [
     460,
     90
    ],
    "flags": {},
-   "order": 13,
+   "order": 12,
    "mode": 0,
    "inputs": [],
    "outputs": [
@@ -432,7 +418,7 @@
    },
    "title": "Height",
    "widgets_values": [
-    768,
+    544,
     "fixed"
    ]
   },
@@ -448,7 +434,7 @@
     720
    ],
    "flags": {},
-   "order": 14,
+   "order": 13,
    "mode": 0,
    "inputs": [
     {
@@ -508,7 +494,7 @@
     380
    ],
    "flags": {},
-   "order": 15,
+   "order": 14,
    "mode": 0,
    "inputs": [
     {
@@ -516,6 +502,13 @@
      "name": "audio",
      "type": "AUDIO",
      "link": 1
+    },
+    {
+     "localized_name": "session",
+     "name": "session",
+     "type": "STRING",
+     "link": 45,
+     "shape": 7
     }
    ],
    "outputs": [
@@ -620,7 +613,7 @@
     90
    ],
    "flags": {},
-   "order": 16,
+   "order": 15,
    "mode": 0,
    "inputs": [],
    "outputs": [
@@ -661,7 +654,7 @@
     90
    ],
    "flags": {},
-   "order": 17,
+   "order": 16,
    "mode": 0,
    "inputs": [
     {
@@ -686,15 +679,15 @@
     "cnr_id": "comfy-core",
     "models": [
      {
-      "name": "minimax_h3_fl2v_turbo_4step_v1.0_768p_comfyui_bf16.safetensors",
-      "url": "https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/loras/minimax_h3_fl2v_turbo_4step_v1.0_768p_comfyui_bf16.safetensors",
+      "name": "minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors",
+      "url": "https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/loras/minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors",
       "directory": "loras"
      }
     ]
    },
-   "title": "Turbo LoRA: 4-step 768p",
+   "title": "Turbo LoRA: 544p, four-step mode",
    "widgets_values": [
-    "minimax_h3_fl2v_turbo_4step_v1.0_768p_comfyui_bf16.safetensors",
+    "minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors",
     1
    ]
   },
@@ -710,7 +703,7 @@
     110
    ],
    "flags": {},
-   "order": 18,
+   "order": 17,
    "mode": 0,
    "inputs": [
     {
@@ -734,9 +727,9 @@
     "Node name for S&R": "MiniMaxH3SigmaShift",
     "cnr_id": "comfy-core"
    },
-   "title": "Turbo sigma shift (video 6 / audio 3)",
+   "title": "Turbo sigma shift (video 12 / audio 3)",
    "widgets_values": [
-    6.0,
+    12.0,
     3.0
    ]
   },
@@ -752,7 +745,7 @@
     80
    ],
    "flags": {},
-   "order": 19,
+   "order": 18,
    "mode": 0,
    "inputs": [
     {
@@ -793,7 +786,7 @@
     270
    ],
    "flags": {},
-   "order": 20,
+   "order": 19,
    "mode": 0,
    "inputs": [
     {
@@ -843,7 +836,7 @@
     110
    ],
    "flags": {},
-   "order": 21,
+   "order": 20,
    "mode": 0,
    "inputs": [],
    "outputs": [
@@ -885,7 +878,7 @@
     70
    ],
    "flags": {},
-   "order": 22,
+   "order": 21,
    "mode": 0,
    "inputs": [],
    "outputs": [
@@ -928,7 +921,7 @@
     70
    ],
    "flags": {},
-   "order": 23,
+   "order": 22,
    "mode": 0,
    "inputs": [],
    "outputs": [
@@ -969,7 +962,7 @@
     170
    ],
    "flags": {},
-   "order": 24,
+   "order": 23,
    "mode": 0,
    "inputs": [
     {
@@ -1015,8 +1008,8 @@
    "title": "Crop portrait to canvas",
    "widgets_values": [
     "lanczos",
-    768,
-    768,
+    544,
+    544,
     "center"
    ]
   },
@@ -1032,7 +1025,7 @@
     150
    ],
    "flags": {},
-   "order": 25,
+   "order": 24,
    "mode": 0,
    "inputs": [
     {
@@ -1058,6 +1051,13 @@
      "widget": {
       "name": "carry_frames"
      }
+    },
+    {
+     "localized_name": "session",
+     "name": "session",
+     "type": "STRING",
+     "link": 46,
+     "shape": 7
     }
    ],
    "outputs": [
@@ -1100,7 +1100,7 @@
     330
    ],
    "flags": {},
-   "order": 26,
+   "order": 25,
    "mode": 0,
    "inputs": [
     {
@@ -1192,8 +1192,8 @@
    "title": "Portraits + prompt (first/last frame)",
    "widgets_values": [
     "",
-    768,
-    768,
+    544,
+    544,
     124
    ]
   },
@@ -1209,7 +1209,7 @@
     200
    ],
    "flags": {},
-   "order": 27,
+   "order": 26,
    "mode": 0,
    "inputs": [
     {
@@ -1284,7 +1284,7 @@
     70
    ],
    "flags": {},
-   "order": 28,
+   "order": 27,
    "mode": 0,
    "inputs": [
     {
@@ -1327,7 +1327,7 @@
     100
    ],
    "flags": {},
-   "order": 29,
+   "order": 28,
    "mode": 0,
    "inputs": [],
    "outputs": [
@@ -1361,7 +1361,7 @@
     70
    ],
    "flags": {},
-   "order": 30,
+   "order": 29,
    "mode": 0,
    "inputs": [],
    "outputs": [
@@ -1394,7 +1394,7 @@
     120
    ],
    "flags": {},
-   "order": 31,
+   "order": 30,
    "mode": 0,
    "inputs": [
     {
@@ -1436,7 +1436,7 @@
     150
    ],
    "flags": {},
-   "order": 32,
+   "order": 31,
    "mode": 0,
    "inputs": [
     {
@@ -1503,7 +1503,7 @@
     70
    ],
    "flags": {},
-   "order": 33,
+   "order": 32,
    "mode": 0,
    "inputs": [
     {
@@ -1546,7 +1546,7 @@
     340
    ],
    "flags": {},
-   "order": 34,
+   "order": 33,
    "mode": 0,
    "inputs": [
     {
@@ -1599,7 +1599,7 @@
      "localized_name": "session",
      "name": "session",
      "type": "STRING",
-     "link": 45,
+     "link": 47,
      "widget": {
       "name": "session"
      }
@@ -1608,7 +1608,7 @@
      "localized_name": "filename",
      "name": "filename",
      "type": "STRING",
-     "link": 46,
+     "link": 48,
      "widget": {
       "name": "filename"
      }
@@ -1641,9 +1641,9 @@
     0,
     1,
     123,
-    "run1_fast",
-    "h3_talking_head_fast.mp4",
-    true,
+    "batch_draft",
+    "batch_draft.mp4",
+    false,
     0
    ]
   }
@@ -2003,16 +2003,32 @@
   ],
   [
    45,
-   21,
-   0,
+   11,
+   1,
+   20,
+   1,
+   "STRING"
+  ],
+  [
+   46,
+   11,
+   1,
+   53,
+   3,
+   "STRING"
+  ],
+  [
+   47,
+   11,
+   1,
    70,
    6,
    "STRING"
   ],
   [
-   46,
-   21,
-   1,
+   48,
+   11,
+   2,
    70,
    7,
    "STRING"
@@ -2026,7 +2042,7 @@
     660,
     0,
     520,
-    1310
+    1170
    ],
    "color": "#a1309b",
    "font_size": 26,

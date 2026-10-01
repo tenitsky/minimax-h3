@@ -314,14 +314,39 @@ and text in the portrait itself tend to animate.
 | `minimax_h3_talking_head_fast` | 768 × 768 | 4-step 768p (4, 6/3) | on | `_fast` |
 | `minimax_h3_talking_head_draft` | 544 × 544 | 8-step 544p in 4-step mode (4, 12/3) | on | `_draft` |
 
-All three use the same pipeline: portrait anchors, generated prompt, pinned
+Each also comes as a **`_batch`** version (`minimax_h3_talking_head_batch`,
+`minimax_h3_talking_head_fast_batch`, `minimax_h3_talking_head_draft_batch`) that
+renders every voiceover in a folder; see below.
+
+All of them use the same pipeline: portrait anchors, generated prompt, pinned
 voiceover, resume, stitching, the INT8 attention backend and `euler`. Every LoRA
 and shift pairing comes from the
 [LoRA authors' table](https://github.com/ModelTC/Minimax-H3-Turbo). **Draft** renders
 about half the pixels per frame of the 768 workflows. Use it to check timing and
-framing, then render the final with Fast or the standard workflow. The Fast graphs
-collapse model and sampling nodes below the main controls: double-click one to
-inspect it. Fewer boxes on screen do not reduce model work.
+framing, then render the final with Fast or the standard workflow.
+
+Every graph is laid out in seven numbered, coloured stages from left to right
+(inputs, prompt, chunk plan, models, guidance, sampling, save), with a note under
+each stage and a **Start here** note on the far left. Red nodes are the ones you set.
+
+### Batch: a folder of voiceovers
+
+1. Put the voiceovers in `ComfyUI/input/batch_audio/` (created at boot). Upload them
+   with JupyterLab (port 8888) or FileBrowser. Accepted: `.wav`, `.mp3`, `.flac`,
+   `.m4a`, `.aac`, `.ogg`, `.opus`.
+2. Open a `_batch` workflow, set the portrait and the Talking-Head Prompt. The same
+   portrait and description are used for every file.
+3. Test with batch count 1, then queue a large batch count: roughly the total seconds
+   of all files ÷ 8, plus a margin. If the batch count box stops at 100, click Run
+   several times; the queue adds up.
+
+Each queue item takes the first file, in name order (`2` before `10`), whose video
+isn't finished, and renders its next unfinished chunk. Each file gets its own chunk
+folder and its own `output/<file name><suffix>.mp4`. When every file is done, the
+**Audio From Folder** node clears the queue. Files added later are picked up on the
+next run, and finished videos are never redone; change `name_suffix` on the folder
+node to render the whole folder again. Two files whose names differ only by
+extension (`talk.wav`, `talk.mp3`) are refused, since they would share a video.
 
 The LoRAs were trained at 1344 × 768 (768p) and at mixed 544p aspect ratios.
 Width/Height accept any 768-short-edge canvas (see the Resolution note in the
@@ -406,19 +431,22 @@ never install `torch` into it: PyTorch comes from the image.
 ├── README.md
 ├── TEMPLATE_README.md                     # paste into the public template's README tab
 ├── custom_nodes/
-│   └── comfyui-h3-longform/               # Split / Carry / Write + Stitch / Name / Talking-Head Prompt
+│   └── comfyui-h3-longform/               # Split / Carry / Write + Stitch / Name / Prompt / Audio From Folder
 ├── tools/
 │   ├── build_workflow.py                  # generates all workflow JSONs; re-run after edits
-│   ├── test_fast_workflow.py              # all three graphs and automatic model download checks
+│   ├── test_fast_workflow.py              # all six graphs, layout and model download checks
 │   ├── test_longform.py                   # CPU + ffmpeg regression checks
 │   ├── test_storage.py                    # Network Volume mount and filesystem checks
 │   ├── test_boot.py                       # full setup with image/network fixtures
 │   ├── test_jupyter.py                    # auth switch and real Jupyter Server smoke test
 │   └── test_setup.py                      # Bash download checks using local fixtures
 └── workflows/
-    ├── minimax_h3_talking_head.json
+    ├── minimax_h3_talking_head.json            # one voiceover: standard / _fast / _draft
     ├── minimax_h3_talking_head_fast.json
-    └── minimax_h3_talking_head_draft.json
+    ├── minimax_h3_talking_head_draft.json
+    ├── minimax_h3_talking_head_batch.json      # a folder of voiceovers
+    ├── minimax_h3_talking_head_fast_batch.json
+    └── minimax_h3_talking_head_draft_batch.json
 ```
 
 ## References

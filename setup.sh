@@ -175,6 +175,8 @@ echo "Preparing model directories..."
 for d in diffusion_models text_encoders vae loras; do
   mkdir -p "$COMFYUI_PATH/models/$d"
 done
+# The batch workflows render every voiceover dropped in here, one video per file.
+mkdir -p "$COMFYUI_PATH/input/batch_audio"
 
 # -------------------------------------------------------------------
 # Download helpers

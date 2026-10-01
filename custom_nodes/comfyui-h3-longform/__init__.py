@@ -38,6 +38,7 @@ No dependencies beyond what ComfyUI already has, plus ffmpeg.
 
 import json
 import os
+import re
 import shutil
 import subprocess
 
@@ -483,6 +484,9 @@ class H3LongformSplit:
                                "ignored. A new voiceover starts at chunk 1 with no "
                                "counter to reset. Wire the chunk_index output to "
                                "Carry and Write."}),
+                # A socket, not a widget: the batch workflows wire the folder node's
+                # name here. Unconnected, the name is read from the Write node.
+                "session": ("STRING", {"forceInput": True}),
             },
             "hidden": {"prompt": "PROMPT"},
         }
@@ -502,7 +506,8 @@ class H3LongformSplit:
 
     def split(self, audio, chunk_index, target_seconds, min_seconds, max_seconds,
               cut_mode="pause", skip_existing=True, motion_carry="off", auto_chunk=False,
-              prompt=None):
+              session=None, prompt=None):
+        session = session or _session_from_prompt(prompt)
         if min_seconds > max_seconds:
             min_seconds, max_seconds = max_seconds, min_seconds
         carry_setting = CARRY_OPTIONS.get(motion_carry, 0)
@@ -524,7 +529,6 @@ class H3LongformSplit:
         if auto_chunk:
             # The browser-side counter keeps climbing through surplus queue items and
             # never learns that a render finished; the files on disk do.
-            session = _session_from_prompt(prompt)
             pick = next_chunk(session, len(spans), carry_setting)
             if pick is None:
                 print(f"{LOG} '{session}' is finished ({len(spans)} chunks) - skipping. "
@@ -550,7 +554,6 @@ class H3LongformSplit:
             print(f"{LOG} past the last chunk; stop the queue manually.")
 
         if skip_existing and blocked and chunk_index < len(spans) - 1:
-            session = _session_from_prompt(prompt)
             done = os.path.join(_session_dir(session),
                                 f"chunk_{chunk_index:04d}.mp4")
             tail_ready = not carry_setting or _read_tail(session, chunk_index, carry_setting) is not None
@@ -606,7 +609,8 @@ class H3LongformCarry:
                                          "tooltip": "Wire from Split. 0 = start on "
                                                     "the portrait."}),
             },
-            # Session name is taken from the Write node so it is set in one place.
+            # Unconnected, the session name is read from the Write node.
+            "optional": {"session": ("STRING", {"forceInput": True})},
             "hidden": {"prompt": "PROMPT"},
         }
 
@@ -623,11 +627,12 @@ class H3LongformCarry:
         # frames is cheap, and a cached clip from another render would be wrong.
         return float("nan")
 
-    def pick(self, portrait, chunk_index, carry_frames, prompt=None):
+    def pick(self, portrait, chunk_index, carry_frames, prompt=None, session=None):
         if not carry_frames:
             return (portrait, None)
 
-        tail = _read_tail(_session_from_prompt(prompt), chunk_index - 1, carry_frames)
+        tail = _read_tail(session or _session_from_prompt(prompt), chunk_index - 1,
+                          carry_frames)
         if tail is not None:
             clip = torch.from_numpy(tail.astype(np.float32) / 255.0)
             print(f"{LOG} chunk {chunk_index}: opening on the last {carry_frames} "
@@ -865,6 +870,135 @@ class H3LongformPrompt:
                                     extra),)
 
 
+AUDIO_EXTENSIONS = (".wav", ".mp3", ".flac", ".m4a", ".aac", ".ogg", ".opus")
+BATCH_SAMPLE_RATE = 48000
+_decoded = {}   # one decoded file, reused while the batch renders its chunks
+
+
+def _natural_key(name):
+    """'voice 2.wav' before 'voice 10.wav'."""
+    return [int(part) if part.isdigit() else part.lower()
+            for part in re.split(r"(\d+)", name)]
+
+
+def is_finished(session):
+    """Whether Write has stitched this session's final video."""
+    return os.path.exists(os.path.join(folder_paths.get_output_directory(),
+                                       SESSION_ROOT, session, FINISHED))
+
+
+def batch_folder(folder):
+    """A folder name under ComfyUI's input directory, or an absolute path."""
+    folder = (folder or "").strip() or "batch_audio"
+    if os.path.isabs(folder):
+        return folder
+    return os.path.join(folder_paths.get_input_directory(), folder)
+
+
+def batch_files(folder):
+    path = batch_folder(folder)
+    if not os.path.isdir(path):
+        os.makedirs(path, exist_ok=True)
+    files = sorted((f for f in os.listdir(path)
+                    if f.lower().endswith(AUDIO_EXTENSIONS) and not f.startswith(".")
+                    and os.path.isfile(os.path.join(path, f))), key=_natural_key)
+    stems = {}
+    for f in files:
+        stems.setdefault(os.path.splitext(f)[0], []).append(f)
+    clashes = [names for names in stems.values() if len(names) > 1]
+    if clashes:
+        # Each file's video and chunk folder are named after it.
+        raise RuntimeError("Batch files must have different names before the extension: "
+                           + "; ".join(", ".join(c) for c in clashes))
+    return path, files
+
+
+def _load_audio_file(path):
+    """Decode any ffmpeg-readable file to 48 kHz stereo float."""
+    key = (path, os.path.getmtime(path), os.path.getsize(path))
+    if key in _decoded:
+        return _decoded[key]
+    p = subprocess.run([_ffmpeg(), "-v", "error", "-i", path, "-vn", "-f", "f32le",
+                        "-acodec", "pcm_f32le", "-ac", "2",
+                        "-ar", str(BATCH_SAMPLE_RATE), "-"],
+                       stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    data = np.frombuffer(p.stdout, dtype=np.float32)
+    if p.returncode != 0 or not data.size:
+        raise RuntimeError(f"Could not read the audio in {path}:\n"
+                           f"{p.stderr.decode(errors='replace')[-1500:]}")
+    waveform = torch.from_numpy(data.reshape(-1, 2).T.copy()).unsqueeze(0)
+    _decoded.clear()
+    _decoded[key] = {"waveform": waveform, "sample_rate": BATCH_SAMPLE_RATE}
+    return _decoded[key]
+
+
+class H3LongformAudioFolder:
+    """Feed every audio file in a folder through the render, one video per file.
+
+    Each queue item takes the first file, in name order, whose video is not finished,
+    and Split then renders that file's next unfinished chunk. When every file is
+    done the pending queue is cleared, so a generous batch count is safe.
+    """
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "folder": ("STRING", {
+                    "default": "batch_audio",
+                    "tooltip": "A folder inside ComfyUI/input/ (or an absolute path) "
+                               "holding the voiceovers. Each file becomes its own "
+                               "video, named after the file."}),
+                "name_suffix": ("STRING", {
+                    "default": "",
+                    "tooltip": "Appended to every video and session name, e.g. _fast. "
+                               "Change it to render the whole folder again."}),
+                "stop_when_done": ("BOOLEAN", {
+                    "default": True,
+                    "tooltip": "When every file is finished, clear the pending queue. "
+                               "This clears ALL pending items, including unrelated "
+                               "jobs."}),
+            },
+        }
+
+    RETURN_TYPES = ("AUDIO", "STRING", "STRING", "INT", "INT")
+    RETURN_NAMES = ("audio", "name", "filename", "file_number", "total_files")
+    FUNCTION = "next_file"
+    CATEGORY = "H3 Longform"
+
+    @classmethod
+    def IS_CHANGED(cls, **kwargs):
+        # Which file is next depends on files written by earlier queue items.
+        return float("nan")
+
+    def next_file(self, folder, name_suffix="", stop_when_done=True):
+        path, files = batch_files(folder)
+        if not files:
+            raise RuntimeError(f"No audio files in {path}. Add .wav, .mp3, .flac, .m4a, "
+                               ".aac, .ogg or .opus files, then queue again.")
+        for number, name in enumerate(files, 1):
+            session = os.path.splitext(name)[0] + name_suffix
+            if is_finished(session):
+                continue
+            print(f"{LOG} batch: file {number}/{len(files)} '{name}' -> "
+                  f"output/{session}.mp4")
+            return (_load_audio_file(os.path.join(path, name)), session,
+                    session + ".mp4", number, len(files))
+
+        print(f"{LOG} batch finished: all {len(files)} files in {path} are rendered.")
+        if stop_when_done:
+            try:
+                from server import PromptServer
+                PromptServer.instance.prompt_queue.wipe_queue()
+                print(f"{LOG} pending queue cleared.")
+            except Exception as e:
+                print(f"{LOG} could not clear the queue ({e}); surplus items will be "
+                      f"skipped instead.")
+        if ExecutionBlocker is None:
+            raise RuntimeError("Every file in the batch folder is already rendered.")
+        return tuple(ExecutionBlocker(None) for _ in self.RETURN_TYPES)
+
+
 class H3LongformAudioName:
     """Turn the loaded audio's filename into strings for session and output name."""
 
@@ -915,6 +1049,7 @@ NODE_CLASS_MAPPINGS = {
     "H3LongformWrite": H3LongformWrite,
     "H3LongformAudioName": H3LongformAudioName,
     "H3LongformPrompt": H3LongformPrompt,
+    "H3LongformAudioFolder": H3LongformAudioFolder,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -923,6 +1058,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "H3LongformWrite": "H3 Longform: Write + Stitch",
     "H3LongformAudioName": "H3 Longform: Name From Audio File",
     "H3LongformPrompt": "H3 Longform: Talking-Head Prompt",
+    "H3LongformAudioFolder": "H3 Longform: Audio From Folder (batch)",
 }
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]

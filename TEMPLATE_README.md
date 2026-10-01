@@ -4,11 +4,9 @@ Turn a portrait and voiceover into a talking-avatar video stitched with your ori
 
 ## Storage
 
-Attach your own **Network Volume at /workspace** when deploying. **100 GB recommended**; large renders need more space.
+Attach your own **Network Volume at /workspace** when deploying (**100 GB recommended**). The container disk is 5 GB and the Volume disk 0 GB.
 
-The public template has a **5 GB container disk** and **0 GB Volume disk**. Attach a Network Volume before deployment.
-
-ComfyUI, its Python environment, models, uploads, workflows and render progress stay on the Network Volume. Save Jupyter notebooks under /workspace. Reattach the same volume in its datacenter when replacing a pod.
+ComfyUI, models, uploads, workflows and renders stay on the Network Volume. Reattach the same volume in its datacenter when replacing a pod.
 
 ## Connect
 
@@ -17,7 +15,7 @@ ComfyUI, its Python environment, models, uploads, workflows and render progress 
 
 First boot downloads **46 GB**. Wait for "Setup complete!" in logs. Models are reused on later boots.
 
-Jupyter has no login by default. Anyone with its accessible URL can run commands. For login protection, set JUPYTER_NO_AUTH=0 and set JUPYTER_PASSWORD when deploying.
+Jupyter has no login by default; anyone with its URL can run commands. For a login, set JUPYTER_NO_AUTH=0 and JUPYTER_PASSWORD.
 
 ## Generate a video
 
@@ -28,7 +26,9 @@ Jupyter has no login by default. Anyone with its accessible URL can run commands
 5. Test one chunk at batch count 1.
 6. Queue roughly audio seconds divided by 8, plus a margin. Each item renders the next unfinished chunk.
 
-The last chunk stitches the final video into ComfyUI/output. For the next video, load its voiceover and queue: it starts at chunk 1. To resume, queue again. Motion carry: **5 or 22 frames**, default off.
+The final video lands in ComfyUI/output. Next video: load its voiceover and queue. To resume, queue again.
+
+**Batch:** the **_batch** workflows render every voiceover in ComfyUI/input/batch_audio/, one video per file, then stop.
 
 ## Hardware and licence
 

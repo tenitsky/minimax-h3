@@ -1,6 +1,6 @@
 # H3 Longform
 
-Five nodes that turn one portrait and a long voiceover into a talking-head video with
+Six nodes that turn one portrait and a long voiceover into a talking-head video with
 MiniMax H3, using ComfyUI's batch queue as the loop. They're ported from the LTX
 Longform pack. No dependencies beyond ffmpeg.
 
@@ -14,6 +14,7 @@ item to the next.
 | **H3 Longform: Opening (portrait or motion carry)** | Returns the portrait on chunk 0 or with carry off; otherwise loads the previous chunk's tail as a guide clip |
 | **H3 Longform: Write + Stitch** | Writes the chunk as an mp4. On the last chunk it concatenates them all and muxes in the original track |
 | **H3 Longform: Name From Audio File** | Names the session and output after the Load Audio file |
+| **H3 Longform: Audio From Folder (batch)** | Loads the first file in a folder (name order) whose video isn't finished, and outputs its audio and session name. Wire `name` to Split, Carry and Write `session`, and `filename` to Write. Clears the queue when every file is done |
 | **H3 Longform: Talking-Head Prompt** | Writes each chunk's full prompt in MiniMax's format from short `subject`, `background` and `delivery` descriptions, with the alignment line for that chunk's length and carry |
 
 The name node's optional `name_suffix` is appended to both names. The bundled

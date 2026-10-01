@@ -1,4 +1,5 @@
-"""CPU checks for the standard, Fast and Fast Draft graphs, sampling settings, and model setup."""
+"""CPU checks for all six graphs (standard / Fast / Draft, single and batch), sampling
+settings, layout and model setup."""
 from collections import deque
 import importlib.util
 import json
@@ -18,7 +19,8 @@ FAST_LORA = "minimax_h3_fl2v_turbo_4step_v1.0_768p_comfyui_bf16.safetensors"
 
 
 class FastWorkflowTests(unittest.TestCase):
-    builder_function = "build_fast"
+    variant = "fast"
+    batch = False
     workflow_filename = "minimax_h3_talking_head_fast.json"
     lora_filename = FAST_LORA
     lora_url = builder.HF + "loras/"
@@ -30,7 +32,7 @@ class FastWorkflowTests(unittest.TestCase):
     fallback_names = ["run1_fast", "h3_talking_head_fast.mp4"]
 
     def setUp(self):
-        self.workflow = getattr(builder, self.builder_function)()
+        self.workflow = builder.build(self.variant, self.batch)
         self.nodes = {node["id"]: node for node in self.workflow["nodes"]}
         self.links = {link[0]: link for link in self.workflow["links"]}
 
@@ -53,10 +55,36 @@ class FastWorkflowTests(unittest.TestCase):
     def test_shipped_workflow_matches_builder(self):
         path = ROOT / "workflows" / self.workflow_filename
         self.assertEqual(json.loads(path.read_text(encoding="utf-8")), self.workflow)
-        ids = {builder.build(name)["id"] for name in builder.VARIANTS}
-        self.assertEqual(len(ids), len(builder.VARIANTS), "Workflow IDs must differ")
+        ids = {w["id"] for w in builder.WORKFLOWS}
+        self.assertEqual(len(ids), len(builder.WORKFLOWS), "Workflow IDs must differ")
+        self.assertEqual(self.workflow["id"], next(
+            w["id"] for w in builder.WORKFLOWS if w["path"] == self.workflow_filename))
         shipped = {p.name for p in (ROOT / "workflows").glob("*.json")}
-        self.assertEqual(shipped, {v["path"] for v in builder.VARIANTS.values()})
+        self.assertEqual(shipped, {w["path"] for w in builder.WORKFLOWS})
+
+    def test_layout_is_spaced_grouped_and_expanded(self):
+        title = 40  # LiteGraph draws the title bar above pos
+        boxes = {nid: (n["pos"][0], n["pos"][1] - title, n["pos"][0] + n["size"][0],
+                       n["pos"][1] + n["size"][1])
+                 for nid, n in self.nodes.items()}
+        for nid, node in self.nodes.items():
+            self.assertNotEqual(node["flags"].get("collapsed"), True, node["type"])
+        ids = sorted(boxes)
+        for i, a in enumerate(ids):
+            for b in ids[i + 1:]:
+                ax0, ay0, ax1, ay1 = boxes[a]
+                bx0, by0, bx1, by1 = boxes[b]
+                overlap = ax0 < bx1 and bx0 < ax1 and ay0 < by1 and by0 < ay1
+                self.assertFalse(overlap, f"{self.nodes[a]['type']} overlaps {self.nodes[b]['type']}")
+        groups = self.workflow["groups"]
+        self.assertEqual([g["title"][:2] for g in groups], [f"{i}." for i in range(1, 8)])
+        for nid, node in self.nodes.items():
+            if node["type"] == "MarkdownNote":
+                continue
+            x0, y0, x1, y1 = boxes[nid]
+            self.assertTrue(any(g["bounding"][0] <= x0 and x1 <= g["bounding"][0] + g["bounding"][2]
+                                and g["bounding"][1] <= y0 and y1 <= g["bounding"][1] + g["bounding"][3]
+                                for g in groups), f"{node['type']} is outside every stage group")
 
     def test_all_links_are_live_reciprocal_typed_and_acyclic(self):
         self.assertEqual(len(self.nodes), len(self.workflow["nodes"]), "Duplicate node IDs")
@@ -165,7 +193,10 @@ class FastWorkflowTests(unittest.TestCase):
 
     def test_portrait_voiceover_carry_and_stitch_paths_are_preserved(self):
         portrait = self.node("LoadImage")
-        audio = self.node("LoadAudio")
+        if self.batch:
+            audio, audio_out = self.node("H3LongformAudioFolder"), "audio"
+        else:
+            audio, audio_out = self.node("LoadAudio"), "AUDIO"
         crop = self.node("ImageScale")
         split = self.node("H3LongformSplit")
         carry = self.node("H3LongformCarry")
@@ -194,9 +225,9 @@ class FastWorkflowTests(unittest.TestCase):
         self.assert_source(guide, "positive", image_to_video, "positive")
         self.assert_source(guide, "latent", image_to_video, "LATENT")
         self.assert_source(guider, "conditioning", guide, "positive")
-        self.assert_source(split, "audio", audio, "AUDIO")
+        self.assert_source(split, "audio", audio, audio_out)
         self.assert_source(writer, "images", decode, "IMAGE")
-        self.assert_source(writer, "original_audio", audio, "AUDIO")
+        self.assert_source(writer, "original_audio", audio, audio_out)
         self.assert_source(writer, "chunk_audio", split, "audio_chunk")
         self.assert_source(writer, "trim_start", split, "carry_frames")
         self.assert_source(writer, "keep_frames", split, "keep_frames")
@@ -213,17 +244,28 @@ class FastWorkflowTests(unittest.TestCase):
         crop = self.node("ImageScale")
         image_to_video = self.node("MiniMaxH3ImageToVideo")
         writer = self.node("H3LongformWrite")
-        name = self.node("H3LongformAudioName")
         for dimension in ("width", "height"):
             control, output = self.source(image_to_video, dimension)
             self.assertEqual(control["widgets_values"], [self.canvas, "fixed"])
             self.assert_source(crop, dimension, control, output)
         self.assertEqual(crop["widgets_values"], ["lanczos", self.canvas, self.canvas, "center"])
         self.assertEqual(image_to_video["widgets_values"][1:3], [self.canvas, self.canvas])
-        self.assertEqual(name["widgets_values"], [".mp4", "", self.name_suffix])
+        if self.batch:
+            name = self.node("H3LongformAudioFolder")
+            self.assertEqual(name["widgets_values"], ["batch_audio", self.name_suffix, True])
+            # Split and Carry must use the same per-file folder as Write.
+            self.assert_source(self.node("H3LongformSplit"), "session", name, "name")
+            self.assert_source(self.node("H3LongformCarry"), "session", name, "name")
+            fallback = ["batch" + self.name_suffix, "batch" + self.name_suffix + ".mp4"]
+        else:
+            name = self.node("H3LongformAudioName")
+            self.assertEqual(name["widgets_values"], [".mp4", "", self.name_suffix])
+            fallback = self.fallback_names
         self.assert_source(writer, "session", name, "name")
         self.assert_source(writer, "filename", name, "filename")
-        self.assertEqual(writer["widgets_values"][3:5], self.fallback_names)
+        self.assertEqual(writer["widgets_values"][3:5], fallback)
+        # In a batch, only the folder node may clear the queue (after the last file).
+        self.assertEqual(writer["widgets_values"][5], not self.batch)
 
     @unittest.skipUnless(BASH and Path(BASH).exists(), "Bash required for default download plan")
     def test_required_model_files_are_in_the_default_download_plan(self):
@@ -254,7 +296,7 @@ class FastWorkflowTests(unittest.TestCase):
 
 
 class FastDraftWorkflowTests(FastWorkflowTests):
-    builder_function = "build_fast_draft"
+    variant = "draft"
     workflow_filename = "minimax_h3_talking_head_draft.json"
     lora_filename = "minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors"
     video_shift = 12.0
@@ -264,7 +306,7 @@ class FastDraftWorkflowTests(FastWorkflowTests):
 
 
 class StandardWorkflowTests(FastWorkflowTests):
-    builder_function = "build"
+    variant = "standard"
     workflow_filename = "minimax_h3_talking_head.json"
     lora_filename = "minimax_h3_fl2v_turbo_8step_v1.0_768p_comfyui_bf16.safetensors"
     lora_url = builder.TURBO_HF
@@ -292,6 +334,22 @@ class StandardWorkflowTests(FastWorkflowTests):
         self.assert_source(self.node("BasicGuider"), "model", sparse, "model")
         self.assert_source(scheduler, "model", sparse, "model")
         self.assertEqual(self.node("KSamplerSelect")["widgets_values"], ["euler"])
+
+
+
+class FastBatchWorkflowTests(FastWorkflowTests):
+    batch = True
+    workflow_filename = "minimax_h3_talking_head_fast_batch.json"
+
+
+class DraftBatchWorkflowTests(FastDraftWorkflowTests):
+    batch = True
+    workflow_filename = "minimax_h3_talking_head_draft_batch.json"
+
+
+class StandardBatchWorkflowTests(StandardWorkflowTests):
+    batch = True
+    workflow_filename = "minimax_h3_talking_head_batch.json"
 
 
 if __name__ == "__main__":
