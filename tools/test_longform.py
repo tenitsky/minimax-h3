@@ -337,6 +337,25 @@ class LongformTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "different names"):
             source.next_file("batch_audio", "_fast", True)
 
+    @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"), "ffmpeg and ffprobe required")
+    def test_batch_folder_refuses_a_file_cut_short_in_transfer(self):
+        # An 8-minute MP3 truncated at 1 MiB still states 8 minutes in its header but
+        # decodes to ~52 s; rendering it would silently produce a short video.
+        folder = Path(self.tmp.name) / "input" / "batch_audio"
+        folder.mkdir(parents=True)
+        full = Path(self.tmp.name) / "full.mp3"
+        subprocess.run([shutil.which("ffmpeg"), "-v", "error", "-f", "lavfi", "-i",
+                        "sine=frequency=300:duration=480", "-ac", "2", "-c:a", "libmp3lame",
+                        "-b:a", "160k", str(full)], check=True)
+        (folder / "lesson.mp3").write_bytes(full.read_bytes()[:1048576])
+        with contextlib.redirect_stdout(io.StringIO()), \
+                self.assertRaisesRegex(RuntimeError, r"lesson\.mp3 is incomplete: its header says 8\.0 min"):
+            h3.H3LongformAudioFolder().next_file("batch_audio")
+        (folder / "lesson.mp3").write_bytes(full.read_bytes())
+        with contextlib.redirect_stdout(io.StringIO()):
+            audio = h3.H3LongformAudioFolder().next_file("batch_audio")[0]
+        self.assertAlmostEqual(audio["waveform"].shape[-1] / audio["sample_rate"], 480, delta=0.5)
+
     def test_batch_folder_is_created_and_explains_when_empty(self):
         with self.assertRaisesRegex(RuntimeError, "No audio files"):
             h3.H3LongformAudioFolder().next_file("batch_audio")

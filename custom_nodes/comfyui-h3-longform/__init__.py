@@ -913,6 +913,33 @@ def batch_files(folder):
     return path, files
 
 
+def _check_complete(path, decoded_seconds):
+    """Refuse a file whose audio stops well short of the length its header states.
+
+    A file cut short in transfer keeps its original header, so players, file
+    properties and ffprobe still report the full length while only the first part
+    decodes. Rendering it would quietly produce a short video. The margin is wide
+    because a VBR file without a length header only has an estimated duration.
+    """
+    probe = shutil.which("ffprobe")
+    if not probe:
+        return
+    p = subprocess.run([probe, "-v", "error", "-show_entries", "format=duration",
+                        "-of", "csv=p=0", path], stdout=subprocess.PIPE,
+                       stderr=subprocess.PIPE, text=True)
+    try:
+        stated = float(p.stdout.strip())
+    except ValueError:
+        return
+    if decoded_seconds < 0.8 * stated and stated - decoded_seconds > 10:
+        raise RuntimeError(
+            f"{os.path.basename(path)} is incomplete: its header says "
+            f"{stated / 60:.1f} min, but the file only contains {decoded_seconds:.1f} s "
+            f"of audio ({os.path.getsize(path):,} bytes). It was most likely cut short "
+            f"while uploading. Upload it again (a zip is most reliable), then delete any "
+            f"video already rendered from it.")
+
+
 def _load_audio_file(path):
     """Decode any ffmpeg-readable file to 48 kHz stereo float."""
     key = (path, os.path.getmtime(path), os.path.getsize(path))
@@ -927,6 +954,7 @@ def _load_audio_file(path):
         raise RuntimeError(f"Could not read the audio in {path}:\n"
                            f"{p.stderr.decode(errors='replace')[-1500:]}")
     waveform = torch.from_numpy(data.reshape(-1, 2).T.copy()).unsqueeze(0)
+    _check_complete(path, waveform.shape[-1] / BATCH_SAMPLE_RATE)
     _decoded.clear()
     _decoded[key] = {"waveform": waveform, "sample_rate": BATCH_SAMPLE_RATE}
     return _decoded[key]
