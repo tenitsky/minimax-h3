@@ -1,5 +1,7 @@
 # MiniMax H3: RunPod ComfyUI template (long-form talking avatar)
 
+> 📖 **Step-by-step guide:** [Batch AI avatar videos from one photo with MiniMax H3](https://tenitsky.com/guides/minimax-h3-batch-avatar-videos/) · more free templates and ComfyUI guides at [tenitsky.com](https://tenitsky.com/)
+
 A one-shot template that installs **MiniMax H3** (Hailuo 3.0, open weights, natively
 supported in ComfyUI) on RunPod. It ships a workflow that turns **one portrait and a
 voiceover of any length** into a talking-head video, rendered in chunks and then
@@ -456,3 +458,15 @@ never install `torch` into it: PyTorch comes from the image.
 - Original release, licence and prompt guides: https://huggingface.co/MiniMaxAI/MiniMax-H3
 - Turbo LoRAs, their resolutions and shifts: https://github.com/ModelTC/Minimax-H3-Turbo
 - Node source: `comfy_extras/nodes_minimax_h3.py` in ComfyUI
+
+<!-- tenitsky.com links -->
+## More templates and guides
+
+- 📖 [A consistent talking avatar from one photo with LTX-2.5 lip sync](https://tenitsky.com/guides/ltx-2-5-talking-avatar/)
+- 🐙 [LongCat-Video-Avatar 1.5: long-form talking avatar](https://github.com/tenitsky/longcat-avatar)
+- 🐙 [SoulX-FlashHead Pro: long talking heads on one GPU](https://github.com/tenitsky/flashhead-pro-avatar)
+- 📖 [Free AI voiceovers with Qwen3-TTS: 9 voices, voice design and cloning](https://tenitsky.com/guides/qwen3-tts-voiceovers/)
+- ☁️ New to RunPod? [Introduction to RunPod: running ComfyUI in the cloud](https://tenitsky.com/guides/introduction-to-runpod/)
+- 🎓 New to ComfyUI? [ComfyUI for beginners: build a text-to-image workflow node by node](https://tenitsky.com/guides/comfyui-node-basics-text-to-image/)
+- 🌐 All templates and guides: [tenitsky.com](https://tenitsky.com/)
+- 📺 YouTube: [AI Art Pipeline](https://www.youtube.com/@aiartpipeline)
